@@ -2,6 +2,12 @@
     "files.associations": {
         "cstdio": "cpp",
         "type_traits": "cpp",
-        "typeinfo": "cpp"
+        "typeinfo": "cpp",
+        "cmath": "c",
+        "cstdlib": "c",
+        "limits": "c",
+        "*.tcc": "c",
+        "cstdint": "c",
+        "cstdarg": "c"
     }
 }
