@@ -67,26 +67,26 @@ __asm__ (
 pthread_key_t uthread_sched_key;
 static pthread_once_t key_once = PTHREAD_ONCE_INIT;
 
-void _uthread_key_destructor(void *data) {
+static void 
+_uthread_key_destructor(void *data) {
     free(data);     
 }
 
 /* 被pthread_once绑定的函数，每个线程只执行一次，用于线程内部的协程共用一个调度器 */
-void _uthread_key_create(void) {
+static void 
+_uthread_key_create(void) {
     assert(pthread_key_create(&uthread_sched_key, _uthread_key_destructor) == 0);
     assert(pthread_setspecific(uthread_sched_key, NULL) == 0);
 }
 
-int uthread_create(struct uthread **new_ut, void *func, void *arg) {    // (缺attr参数)
+int 
+uthread_create(struct uthread **new_ut, void *func, void *arg) {    // (缺attr参数)
     struct uthread *ut = NULL;
     assert(pthread_once(&key_once, _uthread_key_create) == 0);
-    struct uthread_sched *sched = _uthread_get_sched();
-    // printf("here: ");
+    struct uthread_sched *sched = _sched_get();
     if (sched == NULL) {
-        // printf("create a new sched\n");
         _sched_create(0);   // 若参数为零，则使用既定的STACK_SIZE
-        sched = _uthread_get_sched();
-        // printf("sched: %p, size of usched: %ld\n", sched, sizeof(struct uthread_sched));    // 【这里有这句输出就不会insert错误，先放这儿】
+        sched = _sched_get();
         if (sched == NULL) {
             perror("Failed to create scheduler");
             return (-1);
@@ -97,8 +97,6 @@ int uthread_create(struct uthread **new_ut, void *func, void *arg) {    // (缺a
         perror("Failed to allocate memory for new uthread");
         return errno;
     }
-    // printf("ut: %p, size of uthread: %ld\n", ut, sizeof(struct uthread));
-    // printf("page size: %d\n", getpagesize());
     if (posix_memalign(&ut->stack, getpagesize(), sched->stack_size)) {
         free(ut);
         perror("Failed to allocate stack for new uthread");   
@@ -112,8 +110,8 @@ int uthread_create(struct uthread **new_ut, void *func, void *arg) {    // (缺a
     *new_ut = ut;
     
     TAILQ_INSERT_TAIL(&ut->sched->ready, ut, ready_next);
-    if (TAILQ_EMPTY(&ut->sched->ready))
-        perror("Failed to insert!");
+    // if (TAILQ_EMPTY(&ut->sched->ready))
+    //     perror("Failed to insert!");
     return 0;
 }
 
@@ -124,7 +122,7 @@ _uthread_yield(struct uthread *ut) {
 }
 
 // 【待理解】
-void
+static void
 _uthread_exec(void *ut)
 {
     ((struct uthread *)ut)->func(((struct uthread *)ut)->arg);
@@ -148,14 +146,15 @@ _uthread_init(struct uthread *ut)
     ut->state = BIT(UT_ST_READY);
 }
 
-void _uthread_free(struct uthread *ut) {
+static void 
+_uthread_free(struct uthread *ut) {
     free(ut->stack);
     free(ut);
 }
 
 int
 _uthread_resume(struct uthread *ut) {
-    struct uthread_sched *sched = _uthread_get_sched();
+    struct uthread_sched *sched = _sched_get();
     
     if (ut->state & BIT(UT_ST_NEW)) 
         _uthread_init(ut);

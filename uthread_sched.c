@@ -5,7 +5,8 @@
 
 #include "uthread_inner.h"
 
-int _sched_create(size_t stack_size) {           
+int 
+_sched_create(size_t stack_size) {           
     struct uthread_sched *new_sched;
     if ((new_sched = calloc(1, sizeof(struct uthread_sched))) == NULL) {
         perror("Failed to initialize scheduler\n");
@@ -18,12 +19,17 @@ int _sched_create(size_t stack_size) {
     return 0;
 }
 
-int 
+struct uthread_sched* 
+_sched_get() {
+    return pthread_getspecific(uthread_sched_key);
+}
+
+static int 
 _sched_work_done(struct uthread_sched *sched) {
     return TAILQ_EMPTY(&sched->ready);
 }
 
-void
+static void
 _sched_free(struct uthread_sched *sched) {
     free(sched);
 }
@@ -33,7 +39,7 @@ _sched_run() {
     struct uthread_sched *sched = NULL;
     struct uthread *last_ready = NULL, *ut = NULL;
 
-    sched = _uthread_get_sched();
+    sched = _sched_get();
     while (!_sched_work_done(sched)) {
         /* 执行就绪队列中的uthread */
         last_ready = TAILQ_LAST(&sched->ready, uthread_que);
@@ -47,3 +53,4 @@ _sched_run() {
     }
     _sched_free(sched);
 }
+

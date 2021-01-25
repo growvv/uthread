@@ -5,7 +5,7 @@
 
 void 
 a (void *x) {
-    struct uthread *ut = _uthread_get_sched()->current_uthread; 
+    struct uthread *ut = _sched_get()->current_uthread; 
     printf("a is running\n");
     printf("a is yielding\n");
     _uthread_yield(ut); 
@@ -18,7 +18,7 @@ a (void *x) {
 
 void 
 b (void *x) {
-    struct uthread *ut = _uthread_get_sched()->current_uthread; 
+    struct uthread *ut = _sched_get()->current_uthread; 
     printf("b is running\n");
     printf("b is yielding\n");
     _uthread_yield(ut); 

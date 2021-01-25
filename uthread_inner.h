@@ -56,12 +56,8 @@ struct uthread_sched {
 
 extern pthread_key_t uthread_sched_key;
 
-static struct uthread_sched* // 【没有static会出错】
-_uthread_get_sched() {
-    return pthread_getspecific(uthread_sched_key);
-}
-
 int _sched_create(size_t stack_size);
+struct uthread_sched* _sched_get();
 int _sched_run();
 
 void _uthread_yield(struct uthread *ut);
