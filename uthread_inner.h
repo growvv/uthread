@@ -33,10 +33,11 @@ enum uthread_st {
 
 struct uthread {
     struct context          ctx;
-    void                    *stack;
+    void                    *stack;         // 所有的协程都在堆上得到自己的栈空间
     size_t                  stack_size;
     uthread_func            func;
-    void                    *arg;      // 传递给func的参数
+    void                    *arg;           // 传递给func的参数
+    int                     is_main;    
     enum uthread_st         state;                  
     struct uthread_sched    *sched;
     TAILQ_ENTRY(uthread)    ready_next;     // 用于在sched的uthread队列中提供前后指针
@@ -48,7 +49,7 @@ TAILQ_HEAD(uthread_que, uthread);
 
 struct uthread_sched {
     struct context          ctx;
-    void                    *stack;     // 【啥时候用到了？】
+    void                    *stack;
     size_t                  stack_size;
     struct uthread          *current_uthread;  
     struct uthread_que      ready;
@@ -56,11 +57,11 @@ struct uthread_sched {
 
 extern pthread_key_t uthread_sched_key;
 
-int _sched_create(size_t stack_size);
+int _sched_create();
 struct uthread_sched* _sched_get();
 int _sched_run();
 
-void _uthread_yield(struct uthread *ut);
+void _uthread_yield();
 int _uthread_resume(struct uthread *ut);
 
 #endif

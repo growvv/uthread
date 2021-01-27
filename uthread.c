@@ -79,34 +79,56 @@ _uthread_key_create(void) {
     assert(pthread_setspecific(uthread_sched_key, NULL) == 0);
 }
 
+// 创建main协程后直接运行调度器，则main函数剩余的代码（包括uthread_create中剩余的部分）会以协程形式继续运行
+int
+_uthread_create_main() {
+    struct uthread * ut_main = NULL;
+    if ((ut_main = calloc(1, sizeof(struct uthread))) == NULL) {
+        perror("failed to allocate memory for main-uthread");
+        return errno;
+    }
+
+    /* main协程无需设置多余的字段，使用进程的栈空间而非堆空间 */
+    ut_main->is_main = 1;
+    ut_main->sched = _sched_get();
+    ut_main->state = BIT(UT_ST_READY);  // 此处为直接赋值，会同时清掉NEW状态
+
+    TAILQ_INSERT_TAIL(&ut_main->sched->ready, ut_main, ready_next);
+    _switch(&ut_main->sched->ctx, &ut_main->ctx);
+}
+
 int 
 uthread_create(struct uthread **new_ut, void *func, void *arg) {    // (缺attr参数)
     struct uthread *ut = NULL;
     assert(pthread_once(&key_once, _uthread_key_create) == 0);
     struct uthread_sched *sched = _sched_get();
     if (sched == NULL) {
-        _sched_create(0);   // 若参数为零，则使用既定的STACK_SIZE
+        // 第一次调用uthread_create会创建调度器
+        _sched_create();   
         sched = _sched_get();
         if (sched == NULL) {
             perror("Failed to create scheduler");
             return (-1);
         }
+        // 第一次调用uthread_create还需要为main函数创建一个uthread
+        _uthread_create_main();
     }
 
     if ((ut = calloc(1, sizeof(struct uthread))) == NULL) {
         perror("Failed to allocate memory for new uthread");
         return errno;
     }
-    if (posix_memalign(&ut->stack, getpagesize(), sched->stack_size)) {
+    if (posix_memalign(&ut->stack, getpagesize(), STACK_SIZE)) {    // 从堆上为协程分配栈空间
         free(ut);
         perror("Failed to allocate stack for new uthread");   
         return errno;
     }
     ut->sched = sched;
-    ut->stack_size = sched->stack_size;
+    ut->stack_size = STACK_SIZE;
     ut->state = BIT(UT_ST_NEW);
     ut->func = func;
     ut->arg = arg;
+    ut->is_main = 0;
     *new_ut = ut;
     
     TAILQ_INSERT_TAIL(&ut->sched->ready, ut, ready_next);
@@ -116,34 +138,35 @@ uthread_create(struct uthread **new_ut, void *func, void *arg) {    // (缺attr�
 }
 
 void
-_uthread_yield(struct uthread *ut) {
-    TAILQ_INSERT_TAIL(&ut->sched->ready, ut, ready_next);
+_uthread_yield() {
+    struct uthread *ut = _sched_get()->current_uthread;
+    if ((ut->state & BIT(UT_ST_EXITED)) == 0)   // 若不是退出状态，还需要把ut放回ready队列
+        TAILQ_INSERT_TAIL(&ut->sched->ready, ut, ready_next);
     _switch(&ut->sched->ctx, &ut->ctx);
 }
 
-// 【待理解】
+// 协程需要执行的全部流程：1）绑定的函数；2）设置EXITED状态位；3）yield回到调度器
 static void
 _uthread_exec(void *ut)
 {
     ((struct uthread *)ut)->func(((struct uthread *)ut)->arg);
     ((struct uthread *)ut)->state |= BIT(UT_ST_EXITED);
 
-    _uthread_yield(ut);
+    _uthread_yield();   // 协程执行完后会通过yield回到调度器！
 }
 
-// 【待理解】
+// 初始化uthread的上下文
 static void
 _uthread_init(struct uthread *ut)
 {
-    void **stack = NULL;
-    stack = (void **)(ut->stack + (ut->stack_size));
+    void **stack = (void **)(ut->stack + (ut->stack_size));    // stack是指针数组；另外，栈是从上到下的
 
     stack[-3] = NULL;
     stack[-2] = (void *)ut;
-    ut->ctx.esp = (void *)stack - (4 * sizeof(void *));
-    ut->ctx.ebp = (void *)stack - (3 * sizeof(void *));
+    ut->ctx.esp = (void *)stack - (4 * sizeof(void *));     // 栈的起始位置为stack下移4个void指针大小
+    ut->ctx.ebp = (void *)stack - (3 * sizeof(void *));     // ebp存放函数调用的帧指针，【但这个初始值是否合理？】
     ut->ctx.eip = (void *)_uthread_exec;
-    ut->state = BIT(UT_ST_READY);
+    ut->state = BIT(UT_ST_READY);   // 注意这里时=而不是|=，直接把NEW状态也清除了
 }
 
 static void 
@@ -152,23 +175,39 @@ _uthread_free(struct uthread *ut) {
     free(ut);
 }
 
+static void 
+_uthread_free_main(struct uthread *ut) {
+    free(ut);   // main协程不用堆空间作为自己的栈空间，无需释放栈空间
+}
+
 int
 _uthread_resume(struct uthread *ut) {
     struct uthread_sched *sched = _sched_get();
     
     if (ut->state & BIT(UT_ST_NEW)) 
         _uthread_init(ut);
-    
+
     sched->current_uthread = ut;
     _switch(&ut->ctx, &ut->sched->ctx);
+    
     sched->current_uthread = NULL;
-
+    // printf("is state exited? %d\n", (ut->state & BIT(UT_ST_EXITED)) != 0);     
     if (ut->state & BIT(UT_ST_EXITED)) {
-        TAILQ_REMOVE(&ut->sched->ready, ut, ready_next);
-        _uthread_free(ut);
+        ut->is_main ? _uthread_free_main(ut) : _uthread_free(ut);
     }
 
     return 0;
+}
+
+// 用于main函数的末尾，直接切换到调度器，因为没有清除UT_ST_EXITED位，
+// 调度器会删除main协程（如果调度器任务全部执行完毕，会通过exit退出整个进程）
+void 
+_uthread_main_end() {
+    struct uthread *ut_main = _sched_get()->current_uthread;
+    ut_main->state |= BIT(UT_ST_EXITED);   // 这样调度器就会删掉main协程了
+    printf("main is running...\n");
+    printf("main is exiting...\n");
+    _switch(&ut_main->sched->ctx, &ut_main->ctx);   
 }
 
 
