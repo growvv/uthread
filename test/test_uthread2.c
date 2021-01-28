@@ -1,6 +1,5 @@
 #include <stdio.h>
 
-#include "uthread_inner.h"
 #include "uthread.h"
 
 void 
@@ -27,5 +26,7 @@ main (int argc, char **argv) {
     struct uthread *ut2 = NULL;
     uthread_create(&ut2, b, NULL);
     
-    _uthread_main_end();   // 将main协程删除，防止main协程先结束导致整个进程结束
+    printf("main is running...\n");
+    printf("main is exiting...\n");
+    uthread_main_end();   // 将main协程删除，防止main协程先结束导致整个进程结束
 }
