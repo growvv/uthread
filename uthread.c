@@ -4,6 +4,7 @@
 #include <unistd.h>     // getpagesize
 #include <stdio.h>      // perror
 #include <errno.h>      // errno
+#include <sys/types.h>
 
 #include "uthread_inner.h"
 
@@ -65,75 +66,92 @@ __asm__ (
 #endif
 
 pthread_key_t uthread_sched_key;
-static pthread_once_t key_once = PTHREAD_ONCE_INIT;
+static pthread_once_t key_once = PTHREAD_ONCE_INIT;     // 与该变量绑定的函数每个线程只会执行一次
 
+/* 作为线程特有数据的解构函数，用于在线程结束时释放key关联的地址处的资源。
+ *（sched会在整个进程结束时统一释放，单一的sched反而不是通过malloc类函数创建的，后续如果让某一部分
+ * 线程先结束不知道不会不会出现结构函数执行出错，所以直接令pthread_key_create不绑定此函数） 
+ */
 static void 
 _uthread_key_destructor(void *data) {
     free(data);     
 }
 
-/* 被pthread_once绑定的函数，每个线程只执行一次，用于线程内部的协程共用一个调度器 */
-static void 
+/* 被pthread_once绑定的函数，只由某一个线程执行一次，之后其它线程不会再执行 */
+static void    
 _uthread_key_create(void) {
-    assert(pthread_key_create(&uthread_sched_key, _uthread_key_destructor) == 0);
+    assert(pthread_key_create(&uthread_sched_key, NULL) == 0);  // 第二个参数改为NULL，即不绑定_uthread_key_destructor
     assert(pthread_setspecific(uthread_sched_key, NULL) == 0);
 }
 
-// 创建main协程后直接运行调度器，则main函数剩余的代码（包括uthread_create中剩余的部分）会以协程形式继续运行
-// 没有为main协程分配堆空间作为栈，因为那样需要手动更改main协程的栈指针寄存器
+/* 用于创建main thread */
 int
 _uthread_create_main() {
     struct uthread * ut_main = NULL;
+    struct sched *sched = _sched_get();
 
     if ((ut_main = calloc(1, sizeof(struct uthread))) == NULL) {
         perror("failed to allocate memory for main-uthread");
         return errno;
     }
-    /* main协程无需设置多余的字段，使用进程的栈空间而非堆空间，所以free的时候也不需要free(ut->stack) */
+    /* main协程无需设置多余的字段，使用线程的栈空间而非堆空间，所以free的时候也不需要free(ut->stack) */
     ut_main->is_main = 1;
-    ut_main->sched = _sched_get();
-    ut_main->state = BIT(UT_ST_READY);  // 此处为直接赋值，会同时清掉NEW状态
+    ut_main->status = BIT(UT_ST_READY);  // 此处为直接赋值，会同时清掉NEW状态
 
-    TAILQ_INSERT_TAIL(&ut_main->sched->ready, ut_main, ready_next);
-    // 此时调度器已经创建并初始化完毕，可以直接切换到调度器，切换的同时保存了自己的上下文
-    _switch(&ut_main->sched->ctx, &ut_main->ctx); 
+    TAILQ_INSERT_TAIL(&sched->p->ready, ut_main, ready_next);
+    sched->global->n_uthread++;         // 此处不用加锁，还没有别的线程
+
+    /* 这一步很重要，它使得main函数中的代码得以尽可能早地以协程的身份运行。
+     * 此时调度器已经创建并初始化完毕，可以直接切换到调度器，切换的同时保存了自己的上下文； 
+     * 调度器进入调度循环后马上又会执行main协程，从而继续执行main函数之后的代码 */
+    _switch(&sched->ctx, &ut_main->ctx); 
+
+    return 0;
 }
 
-int 
-uthread_create(struct uthread **new_ut, void *func, void *arg) {    // (缺attr参数)
+int
+uthread_create(struct uthread **new_ut, void *func, void *arg) {
     struct uthread *ut = NULL;
+    struct sched *sched = NULL; 
+    
+    /* 为线程特有数据创建一个新的key，以后各个线程就可以通过uthread_sched_key来访问自己的那一份数据了（用作读取sched）。
+     * _uthread_key_create在整个进程中只会由某一个线程执行一次，之后其它线程不会再执行。 */
     assert(pthread_once(&key_once, _uthread_key_create) == 0);
-    struct uthread_sched *sched = _sched_get();
 
+    sched = _sched_get();
     if (sched == NULL) {
-        // 第一次调用uthread_create会创建调度器
-        _sched_create();   
+        /* 第一次调用uthread_create要初始化整个系统 */
+        _runtime_init();
         if ((sched = _sched_get()) == NULL) {
             perror("Failed to create scheduler");
-            return (-1);
+            return -1;
         }
         // 第一次调用uthread_create还需要为main函数创建一个uthread
         _uthread_create_main();
     }
 
+    /* 执行用户发起的创建请求 */
     if ((ut = calloc(1, sizeof(struct uthread))) == NULL) {
         perror("Failed to allocate memory for new uthread");
         return errno;
     }
+    assert(pthread_mutex_lock(&sched->global->mutex) == 0);
+    sched->global->n_uthread++;         // 修改全局数据要加锁
+    assert(pthread_mutex_unlock(&sched->global->mutex) == 0);
+
     if (posix_memalign(&ut->stack, getpagesize(), STACK_SIZE)) {    // 从堆上为协程分配栈空间
         free(ut);
         perror("Failed to allocate stack for new uthread");   
         return errno;
     }
-    ut->sched = sched;
     ut->stack_size = STACK_SIZE;
-    ut->state = BIT(UT_ST_NEW);
+    ut->status = BIT(UT_ST_NEW);
     ut->func = func;
     ut->arg = arg;
     ut->is_main = 0;
     *new_ut = ut;
     
-    TAILQ_INSERT_TAIL(&ut->sched->ready, ut, ready_next);
+    TAILQ_INSERT_TAIL(&sched->p->ready, ut, ready_next);
 
     return 0;
 }
@@ -141,8 +159,8 @@ uthread_create(struct uthread **new_ut, void *func, void *arg) {    // (缺attr�
 // yield只做一次switch切换上下文（将协程放回队列的事儿改为交给resume去做，这样yield更纯粹）
 void
 _uthread_yield() {
-    struct uthread *ut = _sched_get()->current_uthread;
-    _switch(&ut->sched->ctx, &ut->ctx);
+    struct uthread *ut = _sched_get()->cur_uthread;
+    _switch(&_sched_get()->ctx, &ut->ctx);
 }
 
 // 协程需要执行的全部流程：1）绑定的函数；2）设置EXITED状态位；3）yield回到调度器
@@ -150,7 +168,7 @@ static void
 _uthread_exec(void *ut)
 {
     ((struct uthread *)ut)->func(((struct uthread *)ut)->arg);
-    ((struct uthread *)ut)->state |= BIT(UT_ST_EXITED);
+    ((struct uthread *)ut)->status |= BIT(UT_ST_EXITED);
 
     _uthread_yield();   // 协程执行完后会通过yield回到调度器！
 }
@@ -166,48 +184,101 @@ _uthread_init(struct uthread *ut)
     ut->ctx.esp = (void *)stack - (4 * sizeof(void *));     // 栈的起始位置为stack下移4个void指针大小
     ut->ctx.ebp = (void *)stack - (3 * sizeof(void *));     // ebp存放函数调用的帧指针，【但这个初始值是否合理？】
     ut->ctx.eip = (void *)_uthread_exec;
-    ut->state = BIT(UT_ST_READY);   // 注意这里是=而不是|=，直接把NEW状态也清除了
+    ut->status = BIT(UT_ST_READY);   // 注意这里是=而不是|=，直接把NEW状态也清除了
 }
 
 static void 
 _uthread_free(struct uthread *ut) {
     free(ut->stack);
     free(ut);
+    struct sched *sched = _sched_get();
+    assert(pthread_mutex_lock(&sched->global->mutex) == 0);
+    _sched_get()->global->n_uthread--;
+    assert(pthread_mutex_unlock(&sched->global->mutex) == 0);
 }
 
 static void 
 _uthread_free_main(struct uthread *ut) {
     free(ut);   // main协程不用堆空间作为自己的栈空间，无需释放栈空间
+    struct sched *sched = _sched_get();
+    assert(pthread_mutex_lock(&sched->global->mutex) == 0);
+    _sched_get()->global->n_uthread--;
+    assert(pthread_mutex_unlock(&sched->global->mutex) == 0);
 }
 
 int
 _uthread_resume(struct uthread *ut) {
-    struct uthread_sched *sched = _sched_get();
-    
-    if (ut->state & BIT(UT_ST_NEW)) 
+    struct sched *sched = _sched_get();
+
+    if (ut->status & BIT(UT_ST_NEW)) 
         _uthread_init(ut);
 
-    sched->current_uthread = ut;
-    _switch(&ut->ctx, &ut->sched->ctx);
+    sched->cur_uthread = ut;
+    _switch(&ut->ctx, &sched->ctx);
 
-    sched->current_uthread = NULL;
-    // printf("is state exited? %d\n", (ut->state & BIT(UT_ST_EXITED)) != 0); 
-    if (ut->state & BIT(UT_ST_EXITED)) {
+    sched->cur_uthread = NULL;
+
+    if (ut->status & BIT(UT_ST_EXITED)) {
         ut->is_main ? _uthread_free_main(ut) : _uthread_free(ut);
     } else {
-        TAILQ_INSERT_TAIL(&ut->sched->ready, ut, ready_next); // 若不是EXITED状态，还需要把ut放回ready队列
+        TAILQ_INSERT_TAIL(&sched->p->ready, ut, ready_next); // 若不是EXITED状态，还需要把ut放回ready队列
     }
 
     return 0;
 }
 
-// 用于main函数的末尾，因为注册了UT_ST_EXITED位，所以调度器会删除main协程（如果调度器任务全部执行完毕，会通过exit退出整个进程） 
+/* 用于main函数的末尾，防止main函数在其它协程之前退出，导致整个进程结束而其它协程还没有执行完毕。
+ * 通过注册UT_ST_EXITED位，调度器会删除main协程  
+ */
 void 
 uthread_main_end() {
-    struct uthread *ut_main = _sched_get()->current_uthread;
-    ut_main->state |= BIT(UT_ST_EXITED);   // 这样调度器就会删掉main协程了
+    struct uthread *ut_main = _sched_get()->cur_uthread;
+    ut_main->status |= BIT(UT_ST_EXITED);   // 这样调度器就会删掉main协程了
     _uthread_yield();
 }
 
+// 【先不区分读的时候会不会阻塞，只把p解绑，从全局中取一个M出来与p绑定】
+ssize_t 
+uthread_io_read(int fd, void *buf, size_t nbytes) {
+    struct sched *cur_sched = NULL, *new_sched = NULL;
+    struct global_data *global = NULL;
+    pthread_t t;
 
+    cur_sched = _sched_get();
+    global = cur_sched->global;
 
+    if (cur_sched->p && !TAILQ_EMPTY(&cur_sched->p->ready)) {
+        new_sched = TAILQ_FIRST(&global->sched_idle);
+        TAILQ_REMOVE(&global->sched_idle, new_sched, ready_next);
+        global->n_sched_idle--;
+        new_sched->p = cur_sched->p;
+        cur_sched->p = NULL;
+
+        /* 此处记录一个问题： p转移到了新调度器，但p就绪队列中的uthread的sched并没有更改，
+        *   导致新调度器在调度器循环中执行TAILQ_REMOVE(&ut->sched->p->ready, ut, ready_next)
+        *   时会出现ut->sched->p为空指针的错误 
+        *   [fix] 在resume函数中加入一句 ut->sched = _sched_get() 
+        *   2021-2-8
+         */
+
+        /* 为新调度器创建一个线程 */
+        printf("creating a new thread for blocked io...\n");
+        assert(pthread_create(&t, NULL, _sched_create_another, new_sched) == 0);
+        printf("created successively!\n");
+    }
+    
+    // /* 以下单纯为了演示多线程并行的效果 */
+    // for (int k = 0; k < 10000000; ++k) {
+    //     printf("uthread a: k is %d\n", k);
+    // }
+    // /* 演示end */
+
+    ssize_t res = read(fd, buf, nbytes);
+    return res;
+}
+
+// 
+ssize_t 
+uthread_io_write(int fd, void *buf, size_t nbytes) {
+    return write(fd, buf, nbytes);
+}

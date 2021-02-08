@@ -1,16 +1,20 @@
 #ifndef UTHREAD_INNER_H
 #define UTHREAD_INNER_H
 
-#include <time.h>           //  size_t
+#include <inttypes.h>
+#include <time.h>           // size_t
 #include <pthread.h>
 #include <sys/queue.h>      // for queue.h
 
 #define BIT(x) (1 << (x))
 #define CLEARBIT(x) ~(1 << (x))
 
-#define STACK_SIZE (128*1024) /* 128k */
+#define STACK_SIZE         (128*1024)   // 每个协程设置的栈空间大小
+                                        // 【这个栈要是小了，比如2*1024，好像会出问题，先设得大些避开这个问题，后续再优化】
+#define MAX_COUNT_SCHED    1000         // 最大允许创建的调度器个数（即线程的个数）
+#define MAX_PROCS          4            // 最大允许并发的任务个数 ，也即初始化系统时创建的p和sched的个数
 
-struct context {    // 【目前是直接copy的，未思考哪些寄存器必须作为上下文】
+struct context {                        // 直接copy来的
     void     *esp;
     void     *ebp;
     void     *eip;
@@ -25,41 +29,97 @@ struct context {    // 【目前是直接copy的，未思考哪些寄存器必�
 };
 
 typedef void (*uthread_func)(void *);
+
 enum uthread_st {
     UT_ST_NEW,                          // 已创建但还未初始化，需要在resume之前进行初始化
     UT_ST_READY,                        // 初始化后即可进入就绪状态
     UT_ST_EXITED,                       // 已退出，等待清除
 };
-
-struct uthread {
-    struct context          ctx;
-    void                    *stack;         // 所有的协程都在堆上得到自己的栈空间
-    size_t                  stack_size;
-    uthread_func            func;
-    void                    *arg;           // 传递给func的参数
-    int                     is_main;    
-    enum uthread_st         state;                  
-    struct uthread_sched    *sched;
-    TAILQ_ENTRY(uthread)    ready_next;     // 用于在sched的uthread队列中提供前后指针
+/* 【sched和p的状态后续再完善，暂时设置得比较随意】 */
+enum sched_st {
+    SCHED_ST_IDLE,
+    SCHED_ST_RUNNING,
+};
+enum p_st {     
+    P_ST_IDLE,
+    P_ST_RUNNING,
+    P_ST_SYSCALL,   // 暂未用到
+    P_ST_DEAD,      // 暂未用到
 };
 
-// 声明结构体：带尾指针的uthread队列。结构体的名字为uthread_que
-// 之后可通过struct uthread_que来定义一个队列  
+/* 协程（或者称之为用户线程），相当于G */
+struct uthread {
+    struct context          ctx;            // 协程的上下文
+    void                    *stack;         // 协程的栈，在堆上分配
+    size_t                  stack_size;        
+    uthread_func            func;
+    void                    *arg;
+    enum uthread_st         status;
+    TAILQ_ENTRY(uthread)    ready_next;     // 用于指示p中的ready uthread队列的前后节点，参见内核数据结构TAILQ的用法
+    int                     is_main;        // 指示是否为关联main函数的协程，main协程的栈不在堆上，free的时候需要另外处理
+};
+
+// 声明结构体：带尾指针的uthread队列。结构体的名字为uthread_que，之后可通过struct uthread_que来定义一个队列  
 TAILQ_HEAD(uthread_que, uthread); 
 
-struct uthread_sched {
+/* 相当于P */
+struct p {
+    int32_t                 id;             // （测试用）
+    enum p_st               status;         // 状态可为pidle，prunning，psyscall，后续再完善
+    struct uthread_que      ready;          // p中的可运行uthread队列
+    TAILQ_ENTRY(p)          ready_next;     // 【取名为idle_next比较好，来不及改了】用于指示系统中idle p队列的前后节点，参见内核数据结构TAILQ的用法
+};
+
+TAILQ_HEAD(sched_que, sched); // 声明结构体，sched队列，将被定义在global_data中
+TAILQ_HEAD(p_que, p);         // 声明结构体，p队列，将被定义在global_data中
+
+/* 用于保存众多的全局变量，它会被注册在每个sched中，从而实现所有sched都可访问，
+*  但在修改时要通过互斥量保证不冲突！！*/
+struct global_data {
+    pthread_mutex_t         mutex;           // 全局数据的锁
+
+    /* 全局的sched数据 */
+    struct sched            *all_sched;             // sched结构体数组
+    uint32_t                count_sched;            // 系统中现有的sched的总数
+    uint32_t                max_count_sched;        // 最大允许创建的sched个数
+    struct sched_que        sched_idle;             // idle状态的sched队列
+    uint32_t                n_sched_idle;           // idle状态的sched个数
+
+    /* 全局的p数据 */
+    struct p                *all_p;                 // p结构体数组
+    uint32_t                count_p;                // 创建的p的总数
+    struct p_que            p_idle;                 // idle状态的p
+    uint32_t                n_p_idle;               // idle状态的p的个数
+
+    /* 全局的uthread数据 */
+    uint32_t                n_uthread;              // 系统中的uthread总数
+
+    /* 后续可能需要创建全局的ready uthread队列 */
+    // ...
+};
+
+/* 相当于M，主要承担（局部）调度器的功能，一个线程对应一个调度器 */
+struct sched {
+    int32_t                 id;                     // （测试用）
+    enum sched_st           status;
     struct context          ctx;
     void                    *stack;
     size_t                  stack_size;
-    struct uthread          *current_uthread;  
-    struct uthread_que      ready;
+    uthread_func            func;                   // 局部sched的func只绑定sched_run
+    void                    *arg;                   // （好像用不着。。）
+    TAILQ_ENTRY(sched)      ready_next;             // 【取名idle next比较好，就不改了】用于指示系统中idle sched队列的前后节点，参见内核数据结构TAILQ的用法
+    struct p                *p;                     // sched关联的p
+    struct uthread          *cur_uthread;           // sched上正在运行的协程
+    struct global_data      *global;                // 每个sched都会注册全局数据的地址
 };
 
-extern pthread_key_t uthread_sched_key;
+/* 在uthread.c中定义的全局变量，每个线程会拥有一份，用于绑定线程自己的sched（参见 线程特有数据 相关）*/
+extern pthread_key_t uthread_sched_key;             
 
-int _sched_create();
-struct uthread_sched* _sched_get();
-int _sched_run();
+struct sched* _sched_get();
+int _runtime_init();
+void _sched_run();
+void * _sched_create_another(void *arg);    
 
 void _uthread_yield();
 int _uthread_resume(struct uthread *ut);
