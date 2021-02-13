@@ -28,16 +28,12 @@ _sched_work_done(struct p *p) {
 /* 用于在整个进程工作结束后释放全局资源，一定要在调用函数之前上锁，防止多个线程同时释放 */
 void free_source() {
 
-    struct sched *sched = _sched_get();
+    struct sched *sched = _sched_get(), *item;
     struct global_data *global = sched->global;
 
-    /* 释放sched和p的结构体 */
-    printf("releasing global data...\n");
-    for (int i = 0; i < global->count_sched; ++i) 
-        free(global->all_sched[i].stack);
-    free(global->all_sched);
-    free(global->all_p);
-    free(global);
+    TAILQ_FOREACH(item, &global->sched_with_stack, with_stack_next) {
+        free(item->stack);
+    }
 }
 
 /* 调度器函数 */
@@ -63,10 +59,11 @@ start:
     }
 
     /* 若整个进程的所有uthread都运行完毕，则释放全局数据、退出进程 */
-    if (sched->global->n_uthread == 0) {                
-        assert(pthread_mutex_lock(&sched->global->mutex) == 0); // 释放global资源前要加锁，避免其它线程同时释放，这把锁无需释放
-        printf("Congratulations, all uthreads done!\n");
+    if (sched->global->n_uthread == 0) {       
+        // 为输出最后的信息加锁
+        assert(pthread_mutex_lock(&sched->global->mutex) == 0); 
         free_source();
+        printf("Congratulations, all uthreads done!\n");
         printf("Process is existing...\n");
         exit(0);        // 代替main函数的return语句结束整个进程
     } else 
@@ -74,31 +71,22 @@ start:
 }
 
 /* 初始化整个运行时系统 */
-/* NOTE：函数暂未对free失败的情况做除打印错误信息之外的任何有效处理，这显然是不行的！！ */
+/* WARNING：函数暂未对free失败的情况做除打印错误信息之外的任何有效处理，这有可能导致内存泄漏的！！ */
 int
 _runtime_init() {
-    /* 创建全局数据 */
-    struct global_data *global = NULL;
-    if ((global = calloc(1, sizeof(struct global_data))) == NULL) {
-        perror("Failed to initialize global data\n");
-        return errno;
-    }
+    /* 初始化全局数据 */
+    struct global_data *global = &global_data;
     TAILQ_INIT(&global->sched_idle);
+    TAILQ_INIT(&global->sched_with_stack);
     TAILQ_INIT(&global->p_idle);
     global->count_sched = MAX_PROCS;    // 创建的sched的个数
     global->count_p = MAX_PROCS;        // 创建的p的个数
-    if ((global->all_sched = calloc(1, global->count_sched * sizeof(struct sched))) == NULL) {  // 为sched数组分配空间
-        perror("Failed to initialize scheduler");
-        return errno;
-    }
-    if ((global->all_p = calloc(1, global->count_p * sizeof(struct p))) == NULL) {      // 为p数组分配空间
-        perror("Failed to initialize p");
-        return errno;
-    }
+    global->all_p = all_p;
+    global->all_sched = all_sched;
 
     /* 初始化sched和p数组，将它们分别插入全局的idle队列 */
     for (int i = 0; i < MAX_PROCS; ++i) {
-        /* 初始化sched，入idle sched队列 */
+        /* 初始化sched，入idle sched队列。调度器实际上全局有MAX_COUNT_SCHED个，但只初始化MAX_PROCS个 */
         struct sched *sched = &global->all_sched[i];
         if ((sched->stack = calloc(1, STACK_SIZE)) == NULL) {   // 为sched分配栈空间
             perror("Failed to allocate stack for sched");
@@ -109,6 +97,7 @@ _runtime_init() {
         sched->stack_size = STACK_SIZE;
         sched->global = global;
         TAILQ_INSERT_TAIL(&global->sched_idle, sched, ready_next);
+        TAILQ_INSERT_TAIL(&global->sched_with_stack, sched, with_stack_next);
         
         /* 初始化p，入idle p队列 */
         struct p *new_p = &global->all_p[i];

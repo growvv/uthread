@@ -84,6 +84,7 @@ struct global_data {
     uint32_t                max_count_sched;        // 最大允许创建的sched个数
     struct sched_que        sched_idle;             // idle状态的sched队列
     uint32_t                n_sched_idle;           // idle状态的sched个数
+    struct sched_que        sched_with_stack;       // 分配了栈的sched
 
     /* 全局的p数据 */
     struct p                *all_p;                 // p结构体数组
@@ -111,11 +112,18 @@ struct sched {
     struct p                *p;                     // sched关联的p
     struct uthread          *cur_uthread;           // sched上正在运行的协程
     struct global_data      *global;                // 每个sched都会注册全局数据的地址
+    TAILQ_ENTRY(sched)      with_stack_next;        // 用于记录所有分配了栈的sched，以便最后统一释放sched的栈资源
 };
 
 /* 在uthread.c中定义的全局变量，每个线程会拥有一份，用于绑定线程自己的sched（参见 线程特有数据 相关）*/
-extern pthread_key_t uthread_sched_key;             
+extern pthread_key_t uthread_sched_key;   
 
+/* 声明运行时的全局数据，让包含头文件的地方都能访问它们 */
+extern struct global_data global_data;
+extern struct sched all_sched[MAX_COUNT_SCHED];
+extern struct p all_p[MAX_PROCS];
+
+/* 框架内部使用的接口 */
 struct sched* _sched_get();
 int _runtime_init();
 void _sched_run();

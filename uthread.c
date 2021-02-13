@@ -65,17 +65,22 @@ __asm__ (
 );
 #endif
 
+/* 定义运行时的全局数据 */
+struct global_data global_data;
+struct sched all_sched[MAX_COUNT_SCHED];
+struct p all_p[MAX_PROCS];
+
 pthread_key_t uthread_sched_key;
 static pthread_once_t key_once = PTHREAD_ONCE_INIT;     // 与该变量绑定的函数每个线程只会执行一次
 
 /* 作为线程特有数据的解构函数，用于在线程结束时释放key关联的地址处的资源。
- *（sched会在整个进程结束时统一释放，单一的sched反而不是通过malloc类函数创建的，后续如果让某一部分
- * 线程先结束不知道不会不会出现结构函数执行出错，所以直接令pthread_key_create不绑定此函数） 
+ *（单一的sched不是通过malloc类函数创建的，直接令pthread_key_create不绑定此函数） 
  */
-static void 
-_uthread_key_destructor(void *data) {
-    free(data);     
-}
+// static void 
+// _uthread_key_destructor(void *data) {
+//     // printf("here\n");
+//     free((data);     
+// }
 
 /* 被pthread_once绑定的函数，只由某一个线程执行一次，之后其它线程不会再执行 */
 static void    
@@ -168,8 +173,9 @@ static void
 _uthread_exec(void *ut)
 {
     ((struct uthread *)ut)->func(((struct uthread *)ut)->arg);
+    
+    /* 协程的函数体执行完后，需要更改协程的状态，然后yield */
     ((struct uthread *)ut)->status |= BIT(UT_ST_EXITED);
-
     _uthread_yield();   // 协程执行完后会通过yield回到调度器！
 }
 
@@ -253,13 +259,6 @@ uthread_io_read(int fd, void *buf, size_t nbytes) {
         global->n_sched_idle--;
         new_sched->p = cur_sched->p;
         cur_sched->p = NULL;
-
-        /* 此处记录一个问题： p转移到了新调度器，但p就绪队列中的uthread的sched并没有更改，
-        *   导致新调度器在调度器循环中执行TAILQ_REMOVE(&ut->sched->p->ready, ut, ready_next)
-        *   时会出现ut->sched->p为空指针的错误 
-        *   [fix] 在resume函数中加入一句 ut->sched = _sched_get() 
-        *   2021-2-8
-         */
 
         /* 为新调度器创建一个线程 */
         printf("creating a new thread for blocked io...\n");
