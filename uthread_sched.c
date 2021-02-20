@@ -29,9 +29,8 @@ _sched_work_done(struct p *p) {
 void free_source() {
 
     struct sched *sched = _sched_get(), *item;
-    struct global_data *global = sched->global;
 
-    TAILQ_FOREACH(item, &global->sched_with_stack, with_stack_next) {
+    TAILQ_FOREACH(item, &ptr_global->sched_with_stack, with_stack_next) {
         free(item->stack);
     }
 }
@@ -59,9 +58,9 @@ start:
     }
 
     /* 若整个进程的所有uthread都运行完毕，则释放全局数据、退出进程 */
-    if (sched->global->n_uthread == 0) {       
+    if (ptr_global->n_uthread == 0) {       
         // 为输出最后的信息加锁
-        assert(pthread_mutex_lock(&sched->global->mutex) == 0); 
+        assert(pthread_mutex_lock(&ptr_global->mutex) == 0); 
         free_source();
         printf("Congratulations, all uthreads done!\n");
         printf("Process is existing...\n");
@@ -74,20 +73,25 @@ start:
 /* WARNING：函数暂未对free失败的情况做除打印错误信息之外的任何有效处理，这有可能导致内存泄漏的！！ */
 int
 _runtime_init() {
-    /* 初始化全局数据 */
-    struct global_data *global = &global_data;
-    TAILQ_INIT(&global->sched_idle);
-    TAILQ_INIT(&global->sched_with_stack);
-    TAILQ_INIT(&global->p_idle);
-    global->count_sched = MAX_PROCS;    // 创建的sched的个数
-    global->count_p = MAX_PROCS;        // 创建的p的个数
-    global->all_p = all_p;
-    global->all_sched = all_sched;
+    /* 初始化全局数据，注意顺序要和定义中保持一致，防止遗漏 */
+    pthread_mutex_init(&ptr_global->mutex, NULL);
+
+    ptr_global->all_sched = all_sched;
+    ptr_global->count_sched = MAX_PROCS;    // 创建的sched的个数
+    ptr_global->max_count_sched = MAX_COUNT_SCHED;
+    TAILQ_INIT(&ptr_global->sched_idle);
+    TAILQ_INIT(&ptr_global->sched_with_stack);
+    
+    ptr_global->all_p = all_p;
+    ptr_global->count_p = MAX_PROCS;        // 创建的p的个数，后续不会改变
+    TAILQ_INIT(&ptr_global->p_idle);
+    ptr_global->max_count_uthread = MAX_COUNT_UTHREAD;
+    /* end -- 初始化全局数据e */
 
     /* 初始化sched和p数组，将它们分别插入全局的idle队列 */
     for (int i = 0; i < MAX_PROCS; ++i) {
         /* 初始化sched，入idle sched队列。调度器实际上全局有MAX_COUNT_SCHED个，但只初始化MAX_PROCS个 */
-        struct sched *sched = &global->all_sched[i];
+        struct sched *sched = &ptr_global->all_sched[i];
         if ((sched->stack = calloc(1, STACK_SIZE)) == NULL) {   // 为sched分配栈空间
             perror("Failed to allocate stack for sched");
             return errno;
@@ -95,25 +99,24 @@ _runtime_init() {
         sched->id = i;
         sched->status = BIT(SCHED_ST_IDLE);
         sched->stack_size = STACK_SIZE;
-        sched->global = global;
-        TAILQ_INSERT_TAIL(&global->sched_idle, sched, ready_next);
-        TAILQ_INSERT_TAIL(&global->sched_with_stack, sched, with_stack_next);
+        TAILQ_INSERT_TAIL(&ptr_global->sched_idle, sched, ready_next);
+        TAILQ_INSERT_TAIL(&ptr_global->sched_with_stack, sched, with_stack_next);
         
         /* 初始化p，入idle p队列 */
-        struct p *new_p = &global->all_p[i];
+        struct p *new_p = &ptr_global->all_p[i];
         new_p->id = i;
         new_p->status = BIT(P_ST_IDLE);
         TAILQ_INIT(&new_p->ready);
-        TAILQ_INSERT_TAIL(&global->p_idle, new_p, ready_next);
+        TAILQ_INSERT_TAIL(&ptr_global->p_idle, new_p, ready_next);
     }    
 
     /* 拿出一个sched，现在就要用 */
-    struct sched *first_sched = TAILQ_FIRST(&global->sched_idle);
-    TAILQ_REMOVE(&global->sched_idle, first_sched, ready_next);
+    struct sched *first_sched = TAILQ_FIRST(&ptr_global->sched_idle);
+    TAILQ_REMOVE(&ptr_global->sched_idle, first_sched, ready_next);
     first_sched->status = BIT(SCHED_ST_RUNNING);
     /* 为sched分配一个p */
-    first_sched->p = TAILQ_FIRST(&global->p_idle);                      
-    TAILQ_REMOVE(&global->p_idle, first_sched->p, ready_next);
+    first_sched->p = TAILQ_FIRST(&ptr_global->p_idle);                      
+    TAILQ_REMOVE(&ptr_global->p_idle, first_sched->p, ready_next);
     first_sched->p->status = BIT(P_ST_RUNNING);
 
     /* 此后，线程就可以通过_sched_get()获取自己的调度器了 */

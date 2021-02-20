@@ -9,10 +9,11 @@
 #define BIT(x) (1 << (x))
 #define CLEARBIT(x) ~(1 << (x))
 
-#define STACK_SIZE         (128*1024)   // 每个协程设置的栈空间大小
+#define STACK_SIZE          (128*1024)   // 每个协程设置的栈空间大小
                                         // 【这个栈要是小了，比如2*1024，好像会出问题，先设得大些避开这个问题，后续再优化】
-#define MAX_COUNT_SCHED    1000         // 最大允许创建的调度器个数（即线程的个数）
-#define MAX_PROCS          4            // 最大允许并发的任务个数 ，也即初始化系统时创建的p和sched的个数
+#define MAX_COUNT_SCHED     1000         // 最大允许创建的调度器个数（即线程的个数）
+#define MAX_PROCS           4            // 最大允许并发的任务个数 ，也即初始化系统时创建的p和sched的个数
+#define MAX_COUNT_UTHREAD   10000000     // 最大允许创建的ut个数，一千万
 
 struct context {                        // 直接copy来的
     void     *esp;
@@ -83,17 +84,16 @@ struct global_data {
     uint32_t                count_sched;            // 系统中现有的sched的总数
     uint32_t                max_count_sched;        // 最大允许创建的sched个数
     struct sched_que        sched_idle;             // idle状态的sched队列
-    uint32_t                n_sched_idle;           // idle状态的sched个数
     struct sched_que        sched_with_stack;       // 分配了栈的sched
 
     /* 全局的p数据 */
     struct p                *all_p;                 // p结构体数组
     uint32_t                count_p;                // 创建的p的总数
     struct p_que            p_idle;                 // idle状态的p
-    uint32_t                n_p_idle;               // idle状态的p的个数
 
     /* 全局的uthread数据 */
     uint32_t                n_uthread;              // 系统中的uthread总数
+    long                    max_count_uthread;       // 最大允许创建的ut个数
 
     /* 后续可能需要创建全局的ready uthread队列 */
     // ...
@@ -111,7 +111,6 @@ struct sched {
     TAILQ_ENTRY(sched)      ready_next;             // 【取名idle next比较好，就不改了】用于指示系统中idle sched队列的前后节点，参见内核数据结构TAILQ的用法
     struct p                *p;                     // sched关联的p
     struct uthread          *cur_uthread;           // sched上正在运行的协程
-    struct global_data      *global;                // 每个sched都会注册全局数据的地址
     TAILQ_ENTRY(sched)      with_stack_next;        // 用于记录所有分配了栈的sched，以便最后统一释放sched的栈资源
 };
 
@@ -119,7 +118,7 @@ struct sched {
 extern pthread_key_t uthread_sched_key;   
 
 /* 声明运行时的全局数据，让包含头文件的地方都能访问它们 */
-extern struct global_data global_data;
+extern struct global_data *ptr_global;
 extern struct sched all_sched[MAX_COUNT_SCHED];
 extern struct p all_p[MAX_PROCS];
 

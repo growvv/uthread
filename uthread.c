@@ -67,6 +67,7 @@ __asm__ (
 
 /* 定义运行时的全局数据 */
 struct global_data global_data;
+struct global_data *ptr_global = &global_data;
 struct sched all_sched[MAX_COUNT_SCHED];
 struct p all_p[MAX_PROCS];
 
@@ -104,7 +105,7 @@ _uthread_create_main() {
     ut_main->status = BIT(UT_ST_READY);  // 此处为直接赋值，会同时清掉NEW状态
 
     TAILQ_INSERT_TAIL(&sched->p->ready, ut_main, ready_next);
-    sched->global->n_uthread++;         // 此处不用加锁，还没有别的线程
+    ptr_global->n_uthread++;         // 此处不用加锁，还没有别的线程
 
     /* 这一步很重要，它使得main函数中的代码得以尽可能早地以协程的身份运行。
      * 此时调度器已经创建并初始化完毕，可以直接切换到调度器，切换的同时保存了自己的上下文； 
@@ -140,9 +141,9 @@ uthread_create(struct uthread **new_ut, void *func, void *arg) {
         perror("Failed to allocate memory for new uthread");
         return errno;
     }
-    assert(pthread_mutex_lock(&sched->global->mutex) == 0);
-    sched->global->n_uthread++;         // 修改全局数据要加锁
-    assert(pthread_mutex_unlock(&sched->global->mutex) == 0);
+    assert(pthread_mutex_lock(&ptr_global->mutex) == 0);
+    ptr_global->n_uthread++;         // 修改全局数据要加锁
+    assert(pthread_mutex_unlock(&ptr_global->mutex) == 0);
 
     if (posix_memalign(&ut->stack, getpagesize(), STACK_SIZE)) {    // 从堆上为协程分配栈空间
         free(ut);
@@ -198,18 +199,18 @@ _uthread_free(struct uthread *ut) {
     free(ut->stack);
     free(ut);
     struct sched *sched = _sched_get();
-    assert(pthread_mutex_lock(&sched->global->mutex) == 0);
-    _sched_get()->global->n_uthread--;
-    assert(pthread_mutex_unlock(&sched->global->mutex) == 0);
+    assert(pthread_mutex_lock(&ptr_global->mutex) == 0);
+    ptr_global->n_uthread--;
+    assert(pthread_mutex_unlock(&ptr_global->mutex) == 0);
 }
 
 static void 
 _uthread_free_main(struct uthread *ut) {
     free(ut);   // main协程不用堆空间作为自己的栈空间，无需释放栈空间
     struct sched *sched = _sched_get();
-    assert(pthread_mutex_lock(&sched->global->mutex) == 0);
-    _sched_get()->global->n_uthread--;
-    assert(pthread_mutex_unlock(&sched->global->mutex) == 0);
+    assert(pthread_mutex_lock(&ptr_global->mutex) == 0);
+    ptr_global->n_uthread--;
+    assert(pthread_mutex_unlock(&ptr_global->mutex) == 0);
 }
 
 int
@@ -247,16 +248,13 @@ uthread_main_end() {
 ssize_t 
 uthread_io_read(int fd, void *buf, size_t nbytes) {
     struct sched *cur_sched = NULL, *new_sched = NULL;
-    struct global_data *global = NULL;
     pthread_t t;
 
     cur_sched = _sched_get();
-    global = cur_sched->global;
 
     if (cur_sched->p && !TAILQ_EMPTY(&cur_sched->p->ready)) {
-        new_sched = TAILQ_FIRST(&global->sched_idle);
-        TAILQ_REMOVE(&global->sched_idle, new_sched, ready_next);
-        global->n_sched_idle--;
+        new_sched = TAILQ_FIRST(&ptr_global->sched_idle);
+        TAILQ_REMOVE(&ptr_global->sched_idle, new_sched, ready_next);
         new_sched->p = cur_sched->p;
         cur_sched->p = NULL;
 
