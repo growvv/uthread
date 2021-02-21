@@ -102,6 +102,9 @@ _uthread_create_main() {
     }
     /* main协程无需设置多余的字段，使用线程的栈空间而非堆空间，所以free的时候也不需要free(ut->stack) */
     ut_main->is_main = 1;
+    ut_main->id = 0;
+    ptr_global->bitmap_ut[0] = 1;
+    ptr_global->next_ut_id++;
     ut_main->status = BIT(UT_ST_READY);  // 此处为直接赋值，会同时清掉NEW状态
 
     TAILQ_INSERT_TAIL(&sched->p->ready, ut_main, ready_next);
@@ -143,6 +146,11 @@ uthread_create(struct uthread **new_ut, void *func, void *arg) {
     }
     assert(pthread_mutex_lock(&ptr_global->mutex) == 0);
     ptr_global->n_uthread++;         // 修改全局数据要加锁
+    ut->id = ptr_global->next_ut_id;
+    ptr_global->bitmap_ut[ut->id] = 1;
+    do {
+        ptr_global->next_ut_id = (ptr_global->next_ut_id + 1) % MAX_COUNT_UTHREAD;
+    } while (ptr_global->next_ut_id == 1);  // 更新下一个可用的ut id
     assert(pthread_mutex_unlock(&ptr_global->mutex) == 0);
 
     if (posix_memalign(&ut->stack, getpagesize(), STACK_SIZE)) {    // 从堆上为协程分配栈空间
@@ -181,15 +189,17 @@ _uthread_exec(void *ut)
 }
 
 // 在resume中于_switch之前调用，初始化uthread的上下文，
+// NOTE：事实上，这里的上下文初始化中，起作用的仅仅是esp和eip的设置。。
 static void
 _uthread_init(struct uthread *ut)
 {
     void **stack = (void **)(ut->stack + (ut->stack_size));    // stack是指针数组；另外，栈是从上到下的
 
-    stack[-3] = NULL;
-    stack[-2] = (void *)ut;
+    stack[-2] = (void *)ut;     
+    stack[-3] = NULL;   
     ut->ctx.esp = (void *)stack - (4 * sizeof(void *));     // 栈的起始位置为stack下移4个void指针大小
-    ut->ctx.ebp = (void *)stack - (3 * sizeof(void *));     // ebp存放函数调用的帧指针，【但这个初始值是否合理？】
+    ut->ctx.ebp = (void *)stack - (3 * sizeof(void *));     // ebp存放函数调用的帧指针 
+                                                            // NOTE: 在64位平台上，rbp已经默认不作为帧指针了！所以这里对64位平台不起作用
     ut->ctx.eip = (void *)_uthread_exec;
     ut->status = BIT(UT_ST_READY);   // 注意这里是=而不是|=，直接把NEW状态也清除了
 }

@@ -49,8 +49,10 @@ enum p_st {
 };
 
 /* 协程（或者称之为用户线程），相当于G */
+// NOTE: 一定要让ctx作为第一个字段，因为_uthread_init中的上下文初始化并不适用于64位机器
 struct uthread {
     struct context          ctx;            // 协程的上下文
+    long                    id;             // 和线程一样，协程也必须有自己的id
     void                    *stack;         // 协程的栈，在堆上分配
     size_t                  stack_size;        
     uthread_func            func;
@@ -85,6 +87,8 @@ struct global_data {
     uint32_t                max_count_sched;        // 最大允许创建的sched个数
     struct sched_que        sched_idle;             // idle状态的sched队列
     struct sched_que        sched_with_stack;       // 分配了栈的sched
+    char                    bitmap_sched[MAX_COUNT_SCHED];  // 位图，用于分配sched的id，偷懒的实现方式
+    uint32_t                next_sched_id;          // 下一个可用的sched id
 
     /* 全局的p数据 */
     struct p                *all_p;                 // p结构体数组
@@ -94,6 +98,8 @@ struct global_data {
     /* 全局的uthread数据 */
     uint32_t                n_uthread;              // 系统中的uthread总数
     long                    max_count_uthread;       // 最大允许创建的ut个数
+    char                    bitmap_ut[MAX_COUNT_UTHREAD];  // 位图，偷懒。。
+    long                    next_ut_id;             // 下一个可用的ut id                        
 
     /* 后续可能需要创建全局的ready uthread队列 */
     // ...

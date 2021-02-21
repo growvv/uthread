@@ -4,6 +4,7 @@
 #include <assert.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <string.h>     // memset
 
 #include "uthread_inner.h"
 
@@ -81,12 +82,16 @@ _runtime_init() {
     ptr_global->max_count_sched = MAX_COUNT_SCHED;
     TAILQ_INIT(&ptr_global->sched_idle);
     TAILQ_INIT(&ptr_global->sched_with_stack);
+    memset(ptr_global->bitmap_sched, 0, sizeof(ptr_global->bitmap_sched));
+    ptr_global->next_sched_id = MAX_PROCS;  // 下面会分配MAX_PROCS个sched，故此处直接设置该值
     
     ptr_global->all_p = all_p;
     ptr_global->count_p = MAX_PROCS;        // 创建的p的个数，后续不会改变
     TAILQ_INIT(&ptr_global->p_idle);
     ptr_global->max_count_uthread = MAX_COUNT_UTHREAD;
-    /* end -- 初始化全局数据e */
+    memset(ptr_global->bitmap_ut, 0, sizeof(ptr_global->bitmap_ut));
+    ptr_global->next_ut_id = 0;
+    /* end -- 初始化全局数据 */
 
     /* 初始化sched和p数组，将它们分别插入全局的idle队列 */
     for (int i = 0; i < MAX_PROCS; ++i) {
@@ -97,6 +102,7 @@ _runtime_init() {
             return errno;
         }
         sched->id = i;
+        ptr_global->bitmap_sched[i] = 1;
         sched->status = BIT(SCHED_ST_IDLE);
         sched->stack_size = STACK_SIZE;
         TAILQ_INSERT_TAIL(&ptr_global->sched_idle, sched, ready_next);
