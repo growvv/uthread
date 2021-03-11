@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "cstdio": "c",
+        "uthread_inner.h": "c",
+        "queue.h": "c"
+    }
+}

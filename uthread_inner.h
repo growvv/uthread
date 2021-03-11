@@ -5,6 +5,10 @@
 #include <time.h>           // size_t
 #include <pthread.h>
 #include <sys/queue.h>      // for queue.h
+#include <sys/time.h>   // gettimeofday
+
+
+#include "tree.h"
 
 #define BIT(x) (1 << (x))
 #define CLEARBIT(x) ~(1 << (x))
@@ -35,6 +39,9 @@ enum uthread_st {
     UT_ST_NEW,                          // 已创建但还未初始化，需要在resume之前进行初始化
     UT_ST_READY,                        // 初始化后即可进入就绪状态
     UT_ST_EXITED,                       // 已退出，等待清除
+    UT_ST_SLEEPING,                     // “阻塞”状态
+    UT_ST_DETACHED,                     // 处于分离状态的协程可以完全销毁，释放所有资源
+    UT_ST_EXPIRED,                      // 被“阻塞”的协程因为超时而醒来
 };
 /* 【sched和p的状态后续再完善，暂时设置得比较随意】 */
 enum sched_st {
@@ -50,9 +57,10 @@ enum p_st {
 
 /* 协程（或者称之为用户线程），相当于G */
 // NOTE: 一定要让ctx作为第一个字段，因为_uthread_init中的上下文初始化并不适用于64位机器
+// NOTE: 必须初始化的字段一定要在_uthread_crete_main和uthread_create中进行初始化
 struct uthread {
     struct context          ctx;            // 协程的上下文
-    long                    id;             // 和线程一样，协程也必须有自己的id
+    unsigned long           id;             // 和线程一样，协程也必须有自己的id
     void                    *stack;         // 协程的栈，在堆上分配
     size_t                  stack_size;        
     uthread_func            func;
@@ -60,17 +68,26 @@ struct uthread {
     enum uthread_st         status;
     TAILQ_ENTRY(uthread)    ready_next;     // 用于指示p中的ready uthread队列的前后节点，参见内核数据结构TAILQ的用法
     int                     is_main;        // 指示是否为关联main函数的协程，main协程的栈不在堆上，free的时候需要另外处理
+    uint64_t                wakeup_time_usec;    // “假阻塞”后协程醒来的时间
+    struct uthread          *ut_joined;     // 连接到自己的协程
+    struct p                *p;             // 通过ut->p->sched可以获取到某个ut的调度器（_sched_get只用于获取当前ut的调度器)
+    void                    **retval;       // 用于uthread在被join时，传递返回值给join到它的协程
+    
+    RB_ENTRY(uthread)       sleep_node;     // rb树上的结点指针
 };
 
-// 声明结构体：带尾指针的uthread队列。结构体的名字为uthread_que，之后可通过struct uthread_que来定义一个队列  
-TAILQ_HEAD(uthread_que, uthread); 
+// 声明结构体
+TAILQ_HEAD(uthread_que, uthread);   // 带尾指针的uthread队列。结构体的名字为uthread_que，之后可通过struct uthread_que来定义一个队列  
+RB_HEAD(uthread_rb_sleep, uthread); // sleeping tree
 
 /* 相当于P */
 struct p {
     int32_t                 id;             // （测试用）
     enum p_st               status;         // 状态可为pidle，prunning，psyscall，后续再完善
     struct uthread_que      ready;          // p中的可运行uthread队列
+    struct uthread_rb_sleep sleeping;       // p中被“阻塞”的协程
     TAILQ_ENTRY(p)          ready_next;     // 【取名为idle_next比较好，来不及改了】用于指示系统中idle p队列的前后节点，参见内核数据结构TAILQ的用法
+    struct sched            *sched;         // 通过ut->p->sched可以获取到某个ut的调度器（_sched_get只用于获取当前ut的调度器)
 };
 
 TAILQ_HEAD(sched_que, sched); // 声明结构体，sched队列，将被定义在global_data中
@@ -99,7 +116,7 @@ struct global_data {
     uint32_t                n_uthread;              // 系统中的uthread总数
     long                    max_count_uthread;       // 最大允许创建的ut个数
     char                    bitmap_ut[MAX_COUNT_UTHREAD];  // 位图，偷懒。。
-    long                    next_ut_id;             // 下一个可用的ut id                        
+    unsigned long           next_ut_id;             // 下一个可用的ut id                        
 
     /* 后续可能需要创建全局的ready uthread队列 */
     // ...
@@ -120,6 +137,7 @@ struct sched {
     TAILQ_ENTRY(sched)      with_stack_next;        // 用于记录所有分配了栈的sched，以便最后统一释放sched的栈资源
 };
 
+
 /* 在uthread.c中定义的全局变量，每个线程会拥有一份，用于绑定线程自己的sched（参见 线程特有数据 相关）*/
 extern pthread_key_t uthread_sched_key;   
 
@@ -132,9 +150,19 @@ extern struct p all_p[MAX_PROCS];
 struct sched* _sched_get();
 int _runtime_init();
 void _sched_run();
-void * _sched_create_another(void *arg);    
+void * _sched_create_another(void *arg); 
 
 void _uthread_yield();
 int _uthread_resume(struct uthread *ut);
+
+/********************/
+
+// 返回1970年1月1日到现在经过的时间（微秒）
+static inline uint64_t
+_get_usec_now() {
+    struct timeval time = {0, 0};
+    gettimeofday(&time, NULL);   // 1970年1月1日到现在经过的时间，精确到微秒
+    return (time.tv_sec * 1000000) + time.tv_usec;  // 返回微秒，1秒=10^6微秒
+}
 
 #endif

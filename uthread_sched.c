@@ -113,6 +113,7 @@ _runtime_init() {
         new_p->id = i;
         new_p->status = BIT(P_ST_IDLE);
         TAILQ_INIT(&new_p->ready);
+        RB_INIT(&new_p->sleeping);
         TAILQ_INSERT_TAIL(&ptr_global->p_idle, new_p, ready_next);
     }    
 
@@ -124,6 +125,7 @@ _runtime_init() {
     first_sched->p = TAILQ_FIRST(&ptr_global->p_idle);                      
     TAILQ_REMOVE(&ptr_global->p_idle, first_sched->p, ready_next);
     first_sched->p->status = BIT(P_ST_RUNNING);
+    first_sched->p->sched = first_sched;    // 设置p所属的调度器
 
     /* 此后，线程就可以通过_sched_get()获取自己的调度器了 */
     assert(pthread_setspecific(uthread_sched_key, first_sched) == 0);   
@@ -146,3 +148,4 @@ _sched_create_another(void *new_sched) {
     assert(pthread_setspecific(uthread_sched_key, sched) == 0);
     _sched_run();
 }
+

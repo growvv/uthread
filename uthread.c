@@ -71,6 +71,7 @@ struct global_data *ptr_global = &global_data;
 struct sched all_sched[MAX_COUNT_SCHED];
 struct p all_p[MAX_PROCS];
 
+
 pthread_key_t uthread_sched_key;
 static pthread_once_t key_once = PTHREAD_ONCE_INIT;     // 与该变量绑定的函数每个线程只会执行一次
 
@@ -106,6 +107,8 @@ _uthread_create_main() {
     ptr_global->bitmap_ut[0] = 1;
     ptr_global->next_ut_id++;
     ut_main->status = BIT(UT_ST_READY);  // 此处为直接赋值，会同时清掉NEW状态
+    ut_main->ut_joined = NULL;
+    ut_main->p = sched->p;
 
     TAILQ_INSERT_TAIL(&sched->p->ready, ut_main, ready_next);
     ptr_global->n_uthread++;         // 此处不用加锁，还没有别的线程
@@ -126,7 +129,7 @@ uthread_create(struct uthread **new_ut, void *func, void *arg) {
     /* 为线程特有数据创建一个新的key，以后各个线程就可以通过uthread_sched_key来访问自己的那一份数据了（用作读取sched）。
      * _uthread_key_create在整个进程中只会由某一个线程执行一次，之后其它线程不会再执行。 */
     assert(pthread_once(&key_once, _uthread_key_create) == 0);
-
+   
     sched = _sched_get();
     if (sched == NULL) {
         /* 第一次调用uthread_create要初始化整个系统 */
@@ -164,6 +167,9 @@ uthread_create(struct uthread **new_ut, void *func, void *arg) {
     ut->arg = arg;
     ut->is_main = 0;
     *new_ut = ut;
+    ut->wakeup_time_usec = 0;    // 这个不初始化也行
+    ut->ut_joined = NULL;
+    ut->p = sched->p;
     
     TAILQ_INSERT_TAIL(&sched->p->ready, ut, ready_next);
 
@@ -223,6 +229,46 @@ _uthread_free_main(struct uthread *ut) {
     assert(pthread_mutex_unlock(&ptr_global->mutex) == 0);
 }
 
+static inline int
+_uthread_sleep_cmp(struct uthread *u1, struct uthread *u2)
+{
+    if (u1->wakeup_time_usec < u2->wakeup_time_usec)
+        return -1;
+    if (u1->wakeup_time_usec == u2->wakeup_time_usec)
+        return 0;
+    return 1;
+}
+
+// 生成uthread_rb_sleep的红黑树操作
+RB_GENERATE(uthread_rb_sleep, uthread, sleep_node, _uthread_sleep_cmp); // 生成 sleep uthread 的红黑树操作函数
+
+// “阻塞”协程
+void
+_uthread_sched_sleep(struct uthread *ut, uint64_t mescs) {
+    if (mescs == 0)
+        return;
+
+    ut->wakeup_time_usec = _get_usec_now() + mescs * 1000;
+    assert(RB_INSERT(uthread_rb_sleep, &ut->p->sleeping, ut) == 0);
+    ut->status |= BIT(UT_ST_SLEEPING);
+    
+    // 让出CPU，进入“阻塞”状态
+    _uthread_yield();
+
+    // 协程醒过来之后
+    ut->status &= CLEARBIT(UT_ST_SLEEPING);
+}
+
+// 将ut从所属p的sleeping树上摘下，修改ut的状态为ready
+void
+_uthread_desched_sleep(struct uthread *ut) {
+    if (ut->status & BIT(UT_ST_SLEEPING)) {
+        RB_REMOVE(uthread_rb_sleep, &ut->p->sleeping, ut);
+        ut->status &= CLEARBIT(UT_ST_SLEEPING);
+        ut->status |= BIT(UT_ST_READY);
+    } 
+}
+
 int
 _uthread_resume(struct uthread *ut) {
     struct sched *sched = _sched_get();
@@ -235,8 +281,18 @@ _uthread_resume(struct uthread *ut) {
 
     sched->cur_uthread = NULL;
 
+    // 和线程类似，协程终止也分是否为detached状态，如果是，释放所有资源，否则只释放栈
     if (ut->status & BIT(UT_ST_EXITED)) {
-        ut->is_main ? _uthread_free_main(ut) : _uthread_free(ut);
+        if (ut->ut_joined) {    // 如果有join到自己的协程，唤醒它
+            _uthread_desched_sleep(ut->ut_joined);
+            TAILQ_INSERT_TAIL(&ut->ut_joined->p->ready, ut->ut_joined, ready_next);
+        }
+        ut->is_main ? _uthread_free_main(ut) : _uthread_free(ut);      // 释放大部分的资源
+        if (ut->status & BIT(UT_ST_DETACHED)) {
+            ptr_global->bitmap_ut[ut->id] = 0;  // 清空位图，id可以被新的协程复用
+        }
+    } else if (ut->status & BIT(UT_ST_SLEEPING)) {  // 如果是因为sleep而yield的，直接退出
+        return 0;
     } else {
         TAILQ_INSERT_TAIL(&sched->p->ready, ut, ready_next); // 若不是EXITED状态，还需要把ut放回ready队列
     }
@@ -266,6 +322,7 @@ uthread_io_read(int fd, void *buf, size_t nbytes) {
         new_sched = TAILQ_FIRST(&ptr_global->sched_idle);
         TAILQ_REMOVE(&ptr_global->sched_idle, new_sched, ready_next);
         new_sched->p = cur_sched->p;
+        new_sched->p->sched = new_sched;    // 修改p使得uthread的sched改变（ut->p->sched来获取）
         cur_sched->p = NULL;
 
         /* 为新调度器创建一个线程 */
@@ -289,3 +346,69 @@ ssize_t
 uthread_io_write(int fd, void *buf, size_t nbytes) {
     return write(fd, buf, nbytes);
 }
+
+unsigned long 
+uthread_self(void) {
+    struct sched *sched = _sched_get();
+    if (!sched)
+        return -1;
+    return sched->cur_uthread->id;
+}
+
+// 协程终止后，会释放掉协程栈；
+// 但协程的id在位图中的状态位依然不变，直到被uthread_join连接后才会释放位图中的位
+void
+uthread_exit(void *retval) {
+    _sched_get()->cur_uthread->status |= BIT(UT_ST_EXITED);
+    if (retval != NULL) {
+        *((int *)retval) = 0;
+    }
+} 
+
+// 参数不是id，而是结构体指针
+int 
+uthread_detach(struct uthread *ut) {
+    // 如果不可以该ut并不能被join
+    // ……
+
+    ut->status |= BIT(UT_ST_DETACHED);
+    return 0;
+}
+
+// 【暂时不使用retval参数，它的实现似乎不轻松。。】
+int
+uthread_join(struct uthread *ut, void **retval) {
+    struct uthread* cur_ut = _sched_get()->cur_uthread;
+    // 不可以join自己
+    if (ut == cur_ut)
+        return EDEADLK;
+    // 如果ut为detached则不可join
+    if (ut->status & BIT(UT_ST_DETACHED))
+        return EINVAL;
+    // 如果另一个ut已经阻塞在对该ut的连接上（这好像是未定义的？）
+    if (ut->ut_joined != NULL)
+        return EINVAL;
+
+    // 如果ut已经终止了，立即释放位图槽，并返回
+    if (ut->status & BIT(UT_ST_EXITED)) {
+        ptr_global->bitmap_ut[ut->id] = 1;
+        return 0;   // success
+    }
+
+    // 否则，设置ut_joined、retval字段，并把当前协程挂起
+    ut->ut_joined = cur_ut;
+    ut->retval = retval;
+    _uthread_sched_sleep(cur_ut, 10000);    // 【先任意设置一个阻塞的超时时长，10秒】  
+
+    // ut终止，cur_ut醒来
+    if (cur_ut->status & BIT(UT_ST_EXPIRED)) {
+        ut->ut_joined = NULL;
+        return 2;   // 【暂定超时返回2】
+    }
+
+    // 销毁剩余的资源
+    ptr_global->bitmap_ut[ut->id] = 0;  
+
+    return 0; 
+}
+
