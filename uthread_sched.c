@@ -9,6 +9,8 @@
 
 #include "uthread_inner.h"
 
+#define FD_KEY(fd,e) (((int64_t)(fd) << (sizeof(int32_t) * 8)) | e)
+
 struct sched* 
 _sched_get() {
     return pthread_getspecific(uthread_sched_key);
@@ -151,6 +153,7 @@ _runtime_init() {
         new_p->status = BIT(P_ST_IDLE);
         TAILQ_INIT(&new_p->ready);
         RB_INIT(&new_p->sleeping);
+        RB_INIT(&new_p->waiting);
         TAILQ_INSERT_TAIL(&ptr_global->p_idle, new_p, ready_next);
     }    
 
@@ -163,6 +166,7 @@ _runtime_init() {
     TAILQ_REMOVE(&ptr_global->p_idle, first_sched->p, ready_next);
     first_sched->p->status = BIT(P_ST_RUNNING);
     first_sched->p->sched = first_sched;    // 设置p所属的调度器
+    first_sched->p->poller_fd = epoll_create(1024); // linux会忽略掉这个参数
 
     /* 此后，线程就可以通过_sched_get()获取自己的调度器了 */
     assert(pthread_setspecific(uthread_sched_key, first_sched) == 0);   
@@ -204,7 +208,7 @@ void _register_event(struct uthread *ut, int sockfd, enum uthread_event e, uint6
 
     ut->status |= BIT(status);
     ut->fd_wait = FD_KEY(sockfd, e);    // fd_wait是为了让红黑树上可以有键值
-    RB_INSERT(uthread_rb_wait, &ut->sched->waiting, ut);
+    RB_INSERT(uthread_rb_wait, &ut->p->waiting, ut);
     // if (timeout == -1)  // 先假定timeout一定为正数
     //     return; 
     _uthread_sched_sleep(ut, timeout);
