@@ -47,10 +47,7 @@ enum uthread_st {
     UT_ST_SLEEPING,                     // “阻塞”状态
     UT_ST_DETACHED,                     // 处于分离状态的协程可以完全销毁，释放所有资源
     UT_ST_EXPIRED,                      // 被“阻塞”的协程因为超时而醒来
-<<<<<<< HEAD
     UT_ST_FDEOF,                       // 被“文件结束”阻塞后醒来的
-=======
->>>>>>> remotes/origin/feature_socket
     UT_ST_WAIT_RD,
     UT_ST_WAIT_WR,
 };
@@ -90,11 +87,7 @@ struct uthread {
     struct uthread          *ut_joined;     // 连接到自己的协程
     struct p                *p;             // 通过ut->p->sched可以获取到某个ut的调度器（_sched_get只用于获取当前ut的调度器)
     void                    **retval;       // 用于uthread在被join时，传递返回值给join到它的协程
-<<<<<<< HEAD
-    int64_t                 fd_wait;
-=======
     int64_t                 fd_wait;        // 协程监听的 文件描述符+事件 组成的一个索引值，用于红黑树排序的唯一索引
->>>>>>> remotes/origin/feature_socket
     
     RB_ENTRY(uthread)       sleep_node;     // rb树上的结点指针
     RB_ENTRY(uthread)       wait_node;      
