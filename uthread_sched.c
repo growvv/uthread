@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <string.h>     // memset
+#include <sys/epoll.h>
 
 #include "uthread_inner.h"
 
@@ -56,6 +57,32 @@ start:
             if (ut == last_ready)         
                 break;
         }
+
+        /*处理seelp就绪的*/
+        _lthread_resume_expired(sched);
+
+
+        /*处理wait就绪的*/
+        _lthread_poll(); 
+        while (sched->p->num_new_events) {
+            int id = --p->num_new_events;
+            int fd = _uthread_poller_ev_get_fd(&sched->p->eventlist[id]);
+            // fd为调度器本身
+            // if (fd == sched->eventfd) {   
+            //     _uthread_poller_ev_clear_trigger();
+            //     continue;
+            // }
+
+            // 事件：文件描述符挂断
+            int is_eof = _uthread_poller_ev_is_eof(&sched->p->eventlist[id]);  // 若事件为：对应的文件描述符被挂断了
+            if (is_eof)
+               errno = ECONNRESET;
+
+            // 事件：读/写就绪
+            handle_event(fd, UT_EV_READ, is_eof);
+            handle_event(fd, UT_EV_WRITE, is_eof);
+        }
+
     }
 
     /* 若整个进程的所有uthread都运行完毕，则释放全局数据、退出进程 */
@@ -68,6 +95,16 @@ start:
         exit(0);        // 代替main函数的return语句结束整个进程
     } else 
         goto start;     // 如果系统中还有uthread在运行，让调度器空转（暂时用这种方式代替调度器休眠，后续再优化）    
+}
+
+void handle_event(int fd, enum uthread_event ev, int is_eof) {
+    struct uthread* ut = _uthread_desched_event(fd, ev);  /* 将lt从sleeping tree或者waiting tree中移除 */ 
+    if (ut = NULL)  return;                                                                                                   \
+
+    if (is_eof)                                                    
+        ut->status |= BIT(UT_ST_FDEOF);                          
+    _uthread_resume(ut);                                        
+
 }
 
 /* 初始化整个运行时系统 */
@@ -149,3 +186,64 @@ _sched_create_another(void *new_sched) {
     _sched_run();
 }
 
+// ******************************************************
+// schedler和uthread库都会用到的一些函数放在这里
+void _register_event(struct uthread *ut, int sockfd, enum uthread_event e, uint64_t timeout) {
+    struct epoll_event new_event;
+    enum uthread_st status;
+
+    new_event.data.fd = sockfd;
+    if (e == UT_EVENT_RD) {
+        status = UT_ST_WAIT_RD;
+        new_event.events = EPOLLIN | EPOLLONESHOT | EPOLLRDHUP;
+    } else if (e == UT_EVENT_WR) {
+        status = UT_ST_WAIT_WR;
+        new_event.events = EPOLLOUT | EPOLLONESHOT | EPOLLRDHUP;
+    }
+    assert(epoll_ctl(_sched_get()->p->poller_fd, EPOLL_CTL_ADD, sockfd, &new_event) == 0);
+
+    ut->status |= BIT(status);
+    ut->fd_wait = FD_KEY(sockfd, e);    // fd_wait是为了让红黑树上可以有键值
+    RB_INSERT(uthread_rb_wait, &ut->sched->waiting, ut);
+    // if (timeout == -1)  // 先假定timeout一定为正数
+    //     return; 
+    _uthread_sched_sleep(ut, timeout);
+    ut->fd_wait = -1;
+    ut->status &= CLEARBIT(status);
+}
+
+inline int
+_uthread_poller_ev_get_fd(struct epoll_event *ev)
+{
+    return (ev->data.fd);
+}
+
+inline int
+_uthread_poller_ev_get_event(struct epoll_event *ev)
+{
+    return (ev->events);
+}
+
+inline int
+_uthread_poller_ev_is_eof(struct epoll_event *ev)
+{
+    return (ev->events & EPOLLHUP);
+}
+
+// 将监听fd的那个lt从wait tree或者sleeping tree上移除
+struct uthread *
+_uthread_desched_event(int fd, enum uthread_event e)   
+{
+    struct uthread *lt = NULL;
+    struct uthread_sched *sched = lthread_get_sched();
+    struct uthread find_lt;
+    find_lt.fd_wait = FD_KEY(fd, e);
+
+    lt = RB_FIND(lthread_rb_wait, &sched->waiting, &find_lt);
+    if (lt != NULL) {
+        RB_REMOVE(lthread_rb_wait, &lt->sched->waiting, lt);    // 从waiting tree上移除
+        _lthread_desched_sleep(lt);                             // 也将lt从sleeping tree上移除，以防lt在sleeping tree中
+    }
+
+    return (lt);
+}
