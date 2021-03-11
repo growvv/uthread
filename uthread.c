@@ -109,6 +109,7 @@ _uthread_create_main() {
     ut_main->status = BIT(UT_ST_READY);  // 此处为直接赋值，会同时清掉NEW状态
     ut_main->ut_joined = NULL;
     ut_main->p = sched->p;
+    ut_main->fd_wait = -1;
 
     TAILQ_INSERT_TAIL(&sched->p->ready, ut_main, ready_next);
     ptr_global->n_uthread++;         // 此处不用加锁，还没有别的线程
@@ -170,6 +171,7 @@ uthread_create(struct uthread **new_ut, void *func, void *arg) {
     ut->wakeup_time_usec = 0;    // 这个不初始化也行
     ut->ut_joined = NULL;
     ut->p = sched->p;
+    ut->fd_wait = -1;
     
     TAILQ_INSERT_TAIL(&sched->p->ready, ut, ready_next);
 
@@ -241,6 +243,17 @@ _uthread_sleep_cmp(struct uthread *u1, struct uthread *u2)
 
 // 生成uthread_rb_sleep的红黑树操作
 RB_GENERATE(uthread_rb_sleep, uthread, sleep_node, _uthread_sleep_cmp); // 生成 sleep uthread 的红黑树操作函数
+
+static inline int
+_uthread_wait_cmp(struct uthread *ut1, struct uthread *ut2) {
+    if (ut1->fd_wait < ut2->fd_wait)
+        return -1;
+    if (ut2->fd_wait > ut2->fd_wait)
+        return 0;
+    return 1;
+}
+
+RB_GENERATE(uthread_rb_wait, uthread, wait_node, _uthread_wait_cmp);
 
 // “阻塞”协程
 void

@@ -5,8 +5,11 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <string.h>     // memset
+#include <sys/epoll.h>
 
 #include "uthread_inner.h"
+
+#define FD_KEY(fd,e) (((int64_t)(fd) << (sizeof(int32_t) * 8)) | e)
 
 struct sched* 
 _sched_get() {
@@ -114,6 +117,7 @@ _runtime_init() {
         new_p->status = BIT(P_ST_IDLE);
         TAILQ_INIT(&new_p->ready);
         RB_INIT(&new_p->sleeping);
+        RB_INIT(&new_p->waiting);
         TAILQ_INSERT_TAIL(&ptr_global->p_idle, new_p, ready_next);
     }    
 
@@ -126,6 +130,7 @@ _runtime_init() {
     TAILQ_REMOVE(&ptr_global->p_idle, first_sched->p, ready_next);
     first_sched->p->status = BIT(P_ST_RUNNING);
     first_sched->p->sched = first_sched;    // 设置p所属的调度器
+    first_sched->p->poller_fd = epoll_create(1024); // linux会忽略掉这个参数
 
     /* 此后，线程就可以通过_sched_get()获取自己的调度器了 */
     assert(pthread_setspecific(uthread_sched_key, first_sched) == 0);   
@@ -149,3 +154,29 @@ _sched_create_another(void *new_sched) {
     _sched_run();
 }
 
+
+// ******************************************************
+// schedler和uthread库都会用到的一些函数放在这里
+void _register_event(struct uthread *ut, int sockfd, enum uthread_event e, uint64_t timeout) {
+    struct epoll_event new_event;
+    enum uthread_st status;
+
+    new_event.data.fd = sockfd;
+    if (e == UT_EVENT_RD) {
+        status = UT_ST_WAIT_RD;
+        new_event.events = EPOLLIN | EPOLLONESHOT | EPOLLRDHUP;
+    } else if (e == UT_EVENT_WR) {
+        status = UT_ST_WAIT_WR;
+        new_event.events = EPOLLOUT | EPOLLONESHOT | EPOLLRDHUP;
+    }
+    assert(epoll_ctl(_sched_get()->p->poller_fd, EPOLL_CTL_ADD, sockfd, &new_event) == 0);
+
+    ut->status |= BIT(status);
+    ut->fd_wait = FD_KEY(sockfd, e);    // fd_wait是为了让红黑树上可以有键值
+    RB_INSERT(uthread_rb_wait, &ut->p->waiting, ut);
+    // if (timeout == -1)  // 先假定timeout一定为正数
+    //     return; 
+    _uthread_sched_sleep(ut, timeout);
+    ut->fd_wait = -1;
+    ut->status &= CLEARBIT(status);
+}
