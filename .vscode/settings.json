@@ -2,6 +2,7 @@
     "files.associations": {
         "cstdio": "c",
         "uthread_inner.h": "c",
-        "queue.h": "c"
+        "queue.h": "c",
+        "epoll.h": "c"
     }
 }

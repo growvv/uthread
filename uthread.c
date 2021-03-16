@@ -231,7 +231,7 @@ _uthread_free_main(struct uthread *ut) {
     assert(pthread_mutex_unlock(&ptr_global->mutex) == 0);
 }
 
-static inline int
+inline int
 _uthread_sleep_cmp(struct uthread *u1, struct uthread *u2)
 {
     if (u1->wakeup_time_usec < u2->wakeup_time_usec)
@@ -242,9 +242,9 @@ _uthread_sleep_cmp(struct uthread *u1, struct uthread *u2)
 }
 
 // 生成uthread_rb_sleep的红黑树操作
-RB_GENERATE(uthread_rb_sleep, uthread, sleep_node, _uthread_sleep_cmp); // 生成 sleep uthread 的红黑树操作函数
+// RB_GENERATE(uthread_rb_sleep, uthread, sleep_node, _uthread_sleep_cmp); // 生成 sleep uthread 的红黑树操作函数
 
-static inline int
+inline int
 _uthread_wait_cmp(struct uthread *ut1, struct uthread *ut2) {
     if (ut1->fd_wait < ut2->fd_wait)
         return -1;
@@ -253,34 +253,8 @@ _uthread_wait_cmp(struct uthread *ut1, struct uthread *ut2) {
     return 1;
 }
 
-RB_GENERATE(uthread_rb_wait, uthread, wait_node, _uthread_wait_cmp);
+// RB_GENERATE(uthread_rb_wait, uthread, wait_node, _uthread_wait_cmp);
 
-// “阻塞”协程
-void
-_uthread_sched_sleep(struct uthread *ut, uint64_t mescs) {
-    if (mescs == 0)
-        return;
-
-    ut->wakeup_time_usec = _get_usec_now() + mescs * 1000;
-    assert(RB_INSERT(uthread_rb_sleep, &ut->p->sleeping, ut) == 0);
-    ut->status |= BIT(UT_ST_SLEEPING);
-    
-    // 让出CPU，进入“阻塞”状态
-    _uthread_yield();
-
-    // 协程醒过来之后
-    ut->status &= CLEARBIT(UT_ST_SLEEPING);
-}
-
-// 将ut从所属p的sleeping树上摘下，修改ut的状态为ready
-void
-_uthread_desched_sleep(struct uthread *ut) {
-    if (ut->status & BIT(UT_ST_SLEEPING)) {
-        RB_REMOVE(uthread_rb_sleep, &ut->p->sleeping, ut);
-        ut->status &= CLEARBIT(UT_ST_SLEEPING);
-        ut->status |= BIT(UT_ST_READY);
-    } 
-}
 
 int
 _uthread_resume(struct uthread *ut) {

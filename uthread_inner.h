@@ -6,7 +6,7 @@
 #include <pthread.h>
 #include <sys/queue.h>      // for queue.h
 #include <sys/time.h>   // gettimeofday
-
+#include <sys/epoll.h>
 
 #include "tree.h"
 
@@ -51,12 +51,6 @@ enum uthread_st {
     UT_ST_WAIT_RD,
     UT_ST_WAIT_WR,
 };
-
-enum uthread_event {
-    UT_EVENT_RD,
-    UT_EVENT_WR,
-};
-
 
 /* 【sched和p的状态后续再完善，暂时设置得比较随意】 */
 enum sched_st {
@@ -108,6 +102,8 @@ struct p {
     TAILQ_ENTRY(p)          ready_next;     // 【取名为idle_next比较好，来不及改了】用于指示系统中idle p队列的前后节点，参见内核数据结构TAILQ的用法
     struct sched            *sched;         // 通过ut->p->sched可以获取到某个ut的调度器（_sched_get只用于获取当前ut的调度器)
     int                     poller_fd;
+    struct epoll_event      eventlist[1024];
+    int                     num_new_events;
 };
 
 TAILQ_HEAD(sched_que, sched); // 声明结构体，sched队列，将被定义在global_data中
@@ -157,6 +153,11 @@ struct sched {
     TAILQ_ENTRY(sched)      with_stack_next;        // 用于记录所有分配了栈的sched，以便最后统一释放sched的栈资源
 };
 
+int
+_uthread_sleep_cmp(struct uthread *u1, struct uthread *u2);
+
+int
+_uthread_wait_cmp(struct uthread *ut1, struct uthread *ut2);
 
 /* 在uthread.c中定义的全局变量，每个线程会拥有一份，用于绑定线程自己的sched（参见 线程特有数据 相关）*/
 extern pthread_key_t uthread_sched_key;   
@@ -174,6 +175,16 @@ void * _sched_create_another(void *arg);
 
 void _uthread_yield();
 int _uthread_resume(struct uthread *ut);
+
+void _uthread_sched_sleep(struct uthread *ut, uint64_t mescs);
+
+void _uthread_desched_sleep(struct uthread *ut);
+
+void _uthread_sched_sleep(struct uthread *ut, uint64_t mescs); 
+
+void _uthread_desched_sleep(struct uthread *ut);
+
+void _register_event(struct uthread *ut, int sockfd, enum uthread_event e, uint64_t timeout);
 
 /********************/
 

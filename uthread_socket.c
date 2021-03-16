@@ -1,14 +1,16 @@
 #include <sys/socket.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <assert.h>
+#include <stdio.h>
 
 #include "uthread_inner.h"
 
 int 
 uthread_socket(int domain, int type, int protocol) {
     int sock_fd;
-    assert(sock_fd = socket(domain, type, protocol) == -1);
-    assert(fcntl(sock_fd, F_SETFL, O_NONBLOCK) == -1);
+    assert((sock_fd = socket(domain, type, protocol)) != -1);
+    assert(fcntl(sock_fd, F_SETFL, O_NONBLOCK) != -1);
     return sock_fd;
 }
 
