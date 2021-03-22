@@ -9,6 +9,7 @@
 #include <sys/epoll.h>
 
 #include "tree.h"
+// #include "timer.h"
 
 #define BIT(x) (1 << (x))
 #define CLEARBIT(x) ~(1 << (x))
@@ -95,6 +96,7 @@ RB_HEAD(uthread_rb_wait, uthread); // waiting tree
 /* 相当于P */
 struct p {
     int32_t                 id;             // （测试用）
+    pthread_t               tid;            //与P绑定的线程id
     enum p_st               status;         // 状态可为pidle，prunning，psyscall，后续再完善
     struct uthread_que      ready;          // p中的可运行uthread队列
     struct uthread_rb_sleep sleeping;       // p中被“阻塞”的协程

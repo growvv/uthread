@@ -7,6 +7,7 @@
 #include <sys/types.h>
 
 #include "uthread_inner.h"
+#include "timer.h"
 
 int _switch(struct context *new_ctx, struct context *cur_ctx);
 #ifdef __i386__
@@ -175,6 +176,8 @@ uthread_create(struct uthread **new_ut, void *func, void *arg) {
     
     TAILQ_INSERT_TAIL(&sched->p->ready, ut, ready_next);
 
+//    add_timer(10,ut);
+
     return 0;
 }
 
@@ -248,7 +251,7 @@ inline int
 _uthread_wait_cmp(struct uthread *ut1, struct uthread *ut2) {
     if (ut1->fd_wait < ut2->fd_wait)
         return -1;
-    if (ut2->fd_wait > ut2->fd_wait)
+    if (ut1->fd_wait == ut2->fd_wait)
         return 0;
     return 1;
 }

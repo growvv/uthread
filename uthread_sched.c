@@ -9,6 +9,7 @@
 #include "tree.h"
 
 #include "uthread_inner.h"
+#include "timer.h"
 
 #define FD_KEY(fd,e) (((int64_t)(fd) << (sizeof(int32_t) * 8)) | e)
 #define FD_EVENT(f) ((int32_t)(f))
@@ -33,7 +34,7 @@ _sched_work_done(struct p *p) {
     // printf("[sched id: %d] there are %d ready uthreads on current p [id: %d]\n", _sched_get()->id, i, p->id);
     /* end */
 
-    return TAILQ_EMPTY(&p->ready);
+    return TAILQ_EMPTY(&p->ready) && RB_EMPTY(&p->sleeping) && RB_EMPTY(&p->waiting);
 }
 
 /* 用于在整个进程工作结束后释放全局资源，一定要在调用函数之前上锁，防止多个线程同时释放 */
@@ -58,6 +59,7 @@ _uthread_desched_event(int fd, enum uthread_event e)
     ut = RB_FIND(uthread_rb_wait, &sched->p->waiting, &find_ut);
     if (ut != NULL) {
         RB_REMOVE(uthread_rb_wait, &sched->p->waiting, ut);    // 从waiting tree上移除
+        printf("### 就绪 从waiting tree拿下：%d\n", (int)ut->id);
         _uthread_desched_sleep(ut);                             // 也将lt从sleeping tree上移除，以防lt在sleeping tree中
     }
 
@@ -80,9 +82,12 @@ _uthread_cancel_event(struct uthread *ut) {
     }
     // 先取消对fd的监听
     assert(epoll_ctl(ut->p->poller_fd, EPOLL_CTL_DEL, fd, &event) == 0);
+    // printf("--- sleep 取消监听\n");
     // 再把fd从waiting树上拿下
-    if (ut->fd_wait >= 0) 
+    if (ut->fd_wait >= 0) {
         _uthread_desched_event(FD_ONLY(ut->fd_wait), FD_EVENT(ut->fd_wait));
+        printf("### 从waiting tree拿下：%d\n", (int)ut->id);
+    }
     ut->fd_wait = -1;
 }
 
@@ -97,12 +102,13 @@ _uthread_resume_expired(struct sched *sched)
     // t_diff_usecs = _lthread_diff_usecs(sched->birth, _lthread_usec_now());  // 【lfr】因为lt->sleep_usecs赋值的时候也减掉了birth
 
     while ((ut = RB_MIN(uthread_rb_sleep, &sched->p->sleeping)) != NULL) {
-
+        printf("检查sleep任务\n"); 
         if (ut->wakeup_time_usec <= _get_usec_now()) {  //  【lfr】sleep完了
             _uthread_cancel_event(ut);
             _uthread_desched_sleep(ut);    // 从sleep tree上移除
             ut->status |= BIT(UT_ST_EXPIRED);
 
+            printf("resume 因expired\n");
             _uthread_resume(ut);
 
             continue;
@@ -142,7 +148,8 @@ _uthread_poll(void)
     uint64_t usecs = 0;
 
     sched->p->num_new_events = 0;
-    usecs = _uthread_min_timeout(sched);
+    usecs = _uthread_min_timeout(sched);  // 偏差
+    printf("min_timeout: %lld\n", (long long)usecs);
 
     /* never sleep if we have an lthread pending in the new queue */
     // 如果_lthread_min_timeout返回0，或者就绪队列不为空，就直接返回，不会继续去获取POLL_EVENT_TYPE事件
@@ -150,7 +157,7 @@ _uthread_poll(void)
         // 【感觉这一段应该就是把微秒转换成秒+纳秒，但好像逻辑又不完全对】
         t.tv_sec =  usecs / 1000000u;   
         if (t.tv_sec != 0)              
-            t.tv_nsec  =  (usecs % 1000u)  * 1000000u;  // 【就是这里，貌似写错了？——经讨论，是作者把两个数字写反了】
+            t.tv_nsec  =  (usecs % 1000000u)  * 1000u;  // 【就是这里，貌似写错了？——经讨论，是作者把两个数字写反了】已改
         else
             t.tv_nsec = usecs * 1000u;
     } else {
@@ -159,6 +166,7 @@ _uthread_poll(void)
 
     // 不断尝试获取就绪的POLL_EVENT_TYPE事件，直到获取成功
     while (1) {
+        printf("开始epoll_wait\n");
         ret = epoll_wait(sched->p->poller_fd, sched->p->eventlist, 1024, t.tv_sec*1000.0 + t.tv_nsec/1000000.0);    
         if (ret == -1 && errno == EINTR) {  // The call was interrupted by a signal handler before... 见官网，这是一个可接受的error 
             continue;
@@ -176,8 +184,32 @@ _uthread_poll(void)
 }
 
 void handle_event(int fd, enum uthread_event ev, int is_eof) {
+    printf("收到读就绪\n");
     struct uthread* ut = _uthread_desched_event(fd, ev);  /* 将lt从sleeping tree或者waiting tree中移除 */ 
-    if (ut = NULL)  return;                                                                                                   \
+    
+    if(ut == NULL) {
+         printf("ut为NULL, %d\n", ev);
+    } else {
+        printf("ut:%d e:%d\n", (int)ut->id, ev);
+    }
+    if (ut == NULL)  return;    
+    
+    
+    // int fd = FD_ONLY(ut->fd_wait);
+    assert(fd == FD_ONLY(ut->fd_wait));
+    struct epoll_event event;
+    event.data.fd = fd;
+
+    if (ut->status & BIT(UT_ST_WAIT_RD)) {
+        event.events = EPOLLIN | EPOLLONESHOT | EPOLLRDHUP;
+        ut->status &= CLEARBIT(UT_ST_WAIT_RD);
+    } else if (ut->status & BIT(UT_EVENT_WR)) {
+        event.events = EPOLLOUT | EPOLLONESHOT | EPOLLRDHUP;
+        ut->status &= CLEARBIT(UT_EVENT_WR);
+    }
+    // 先取消对fd的监听
+    assert(epoll_ctl(ut->p->poller_fd, EPOLL_CTL_DEL, fd, &event) == 0);       
+    // printf("--- wait 取消监听\n");                                                                   
 
     if (is_eof)                                                    
         ut->status |= BIT(UT_ST_FDEOF);                          
@@ -194,11 +226,14 @@ _sched_run() {
 
     sched = _sched_get();
 start:
+    printf("always start\n");
     while (sched->p && !_sched_work_done(sched->p)) {
+        printf("还有任务呢\n");
         /* 执行就绪队列中的uthread */
         last_ready = TAILQ_LAST(&sched->p->ready, uthread_que);
         while (!TAILQ_EMPTY(&sched->p->ready)) {
             ut = TAILQ_FIRST(&sched->p->ready);
+            printf("从ready取出ut: %d\n", (int)ut->id);
             TAILQ_REMOVE(&sched->p->ready, ut, ready_next);
             _uthread_resume(ut);
             if (!sched->p)          // NOTE：如果原来的p已经解绑了，那last_ready也就失去意义了
@@ -211,8 +246,10 @@ start:
         _uthread_resume_expired(sched);
 
 
+        printf("poll前\n");
         /*处理wait就绪的*/
         _uthread_poll(); 
+        printf("poll后\n");
         while (sched->p->num_new_events) {
             int id = --sched->p->num_new_events;
             int fd = sched->p->eventlist[id].data.fd;
@@ -229,6 +266,7 @@ start:
                errno = ECONNRESET;
 
             // 事件：读/写就绪
+            printf("监听到的东西: %d %d %d %d\n", sched->p->eventlist[id].events & EPOLLIN, sched->p->eventlist[id].events & EPOLLOUT, sched->p->eventlist[id].events & EPOLLONESHOT, sched->p->eventlist[id].events & EPOLLHUP);
             handle_event(fd, UT_EVENT_RD, is_eof);
             handle_event(fd, UT_EVENT_WR, is_eof);
         }
@@ -317,6 +355,8 @@ _runtime_init() {
     first_sched->ctx.ebp = (void *)stack - (3 * sizeof(void *)); 
     first_sched->ctx.eip = (void *)_sched_run;
 
+ //   pthread_t tid;
+ //   pthread_create(&tid,NULL,create_timewheel,NULL);
     return 0;
 }
 
@@ -342,14 +382,22 @@ void _register_event(struct uthread *ut, int sockfd, enum uthread_event e, uint6
         status = UT_ST_WAIT_WR;
         new_event.events = EPOLLOUT | EPOLLONESHOT | EPOLLRDHUP;
     }
-    assert(epoll_ctl(_sched_get()->p->poller_fd, EPOLL_CTL_ADD, sockfd, &new_event) == 0);
+    // assert(epoll_ctl(_sched_get()->p->poller_fd, EPOLL_CTL_ADD, sockfd, &new_event) == 0);
+    epoll_ctl(_sched_get()->p->poller_fd, EPOLL_CTL_ADD, sockfd, &new_event);
+    printf("---增加监听\n");
+    printf("ctl after\n");
 
     ut->status |= BIT(status);
     ut->fd_wait = FD_KEY(sockfd, e);    // fd_wait是为了让红黑树上可以有键值
+    // printf("insert before\n");
+    printf("添加到 waiiting tree: %d\n", (int)ut->id);
     RB_INSERT(uthread_rb_wait, &ut->p->waiting, ut);
+    // printf("insert after\n");
     // if (timeout == -1)  // 先假定timeout一定为正数
     //     return; 
+    printf("sleep before\n");
     _uthread_sched_sleep(ut, timeout);
+    printf("sleep after\n");
     ut->fd_wait = -1;
     ut->status &= CLEARBIT(status);
 }
@@ -376,15 +424,19 @@ _uthread_poller_ev_is_eof(struct epoll_event *ev)
 void
 _uthread_sched_sleep(struct uthread *ut, uint64_t mescs) {
     if (mescs == 0)
-        return;
+        mescs = (uint64_t)(1<<31-1) * 1000;   // 前面的是秒数
+        // mescs = 10000;
 
     ut->wakeup_time_usec = _get_usec_now() + mescs * 1000;
     assert(RB_INSERT(uthread_rb_sleep, &ut->p->sleeping, ut) == 0);
+    printf("添加到 sleep tree: %d\n", (int)ut->id);
     ut->status |= BIT(UT_ST_SLEEPING);
-    
+
+    printf("yield before\n");
     // 让出CPU，进入“阻塞”状态
     _uthread_yield();
 
+    printf("wake up\n");
     // 协程醒过来之后
     ut->status &= CLEARBIT(UT_ST_SLEEPING);
 }
@@ -394,6 +446,7 @@ void
 _uthread_desched_sleep(struct uthread *ut) {
     if (ut->status & BIT(UT_ST_SLEEPING)) {
         RB_REMOVE(uthread_rb_sleep, &ut->p->sleeping, ut);
+        printf("### 从sleep tree拿下：%d\n", (int)ut->id);
         ut->status &= CLEARBIT(UT_ST_SLEEPING);
         ut->status |= BIT(UT_ST_READY);
     } 

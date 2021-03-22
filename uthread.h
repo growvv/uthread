@@ -3,6 +3,7 @@
 
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <stdint.h>
 
 struct uthread *ut;
 
@@ -18,6 +19,8 @@ int uthread_socket(int domain, int type, int protocol);
 int uthread_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
 // connect有可能超时
 int uthread_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
+ssize_t uthread_read(int fd, void *buf, size_t length, uint64_t timeout);
+ssize_t uthread_write(int fd, const void *buf, size_t length);
 
 // 下面的接口临时开放给用户
 void _uthread_yield();

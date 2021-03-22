@@ -3,6 +3,8 @@
         "cstdio": "c",
         "uthread_inner.h": "c",
         "queue.h": "c",
-        "epoll.h": "c"
+        "epoll.h": "c",
+        "uthread.h": "c",
+        "stdlib.h": "c"
     }
 }
