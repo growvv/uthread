@@ -21,10 +21,12 @@ struct timer_wheel {
     int current;
 };
 
-static struct timer_wheel timer = {{0}, 0};
+static struct timer_wheel timer = {{NULL}, 0};
 
-void* create_timewheel(void* data);
+void* create_timewheel(void* arg);
 void tick(int signo);
 void add_timer(int len, struct uthread *ut);
+
+extern pthread_t global_pid;
 
 #endif

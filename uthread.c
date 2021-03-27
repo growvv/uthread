@@ -5,6 +5,8 @@
 #include <stdio.h>      // perror
 #include <errno.h>      // errno
 #include <sys/types.h>
+#include <signal.h>
+#include <string.h>
 
 #include "uthread_inner.h"
 #include "timer.h"
@@ -85,6 +87,18 @@ static pthread_once_t key_once = PTHREAD_ONCE_INIT;     // 与该变量绑定的
 //     free((data);     
 // }
 
+void handler(){
+    printf("收到了指示执行yield的信号\n");
+
+    // 执行信号处理函数期间会自动屏蔽该信号，而yield出去之后handler并没有执行结束
+    // 因此，这里需要解除对SIGUSR1的屏蔽，
+    sigset_t set;
+    sigaddset(&set, SIGUSR1);
+    sigprocmask(SIG_UNBLOCK, &set, NULL);
+    
+    _uthread_yield();
+}
+
 /* 被pthread_once绑定的函数，只由某一个线程执行一次，之后其它线程不会再执行 */
 static void    
 _uthread_key_create(void) {
@@ -119,6 +133,14 @@ _uthread_create_main() {
      * 此时调度器已经创建并初始化完毕，可以直接切换到调度器，切换的同时保存了自己的上下文； 
      * 调度器进入调度循环后马上又会执行main协程，从而继续执行main函数之后的代码 */
     _switch(&sched->ctx, &ut_main->ctx); 
+
+    /* 为主线程注册用于抢占的信号处理函数 */
+    struct sigaction act;
+	memset(&act, 0, sizeof(act));
+	sigaddset(&act.sa_mask,SIGALRM);
+	pthread_sigmask(SIG_BLOCK,&act.sa_mask,NULL);
+    act.sa_handler = handler;
+    sigaction(SIGUSR1,&act,NULL);
 
     return 0;
 }
@@ -267,6 +289,11 @@ _uthread_resume(struct uthread *ut) {
         _uthread_init(ut);
 
     sched->cur_uthread = ut;
+    printf("current ut:%ld\n",ut->id);
+    printf("current pid:%ld\n",pthread_self());
+
+    add_timer(2,ut);
+
     _switch(&ut->ctx, &sched->ctx);
 
     sched->cur_uthread = NULL;
@@ -401,4 +428,3 @@ uthread_join(struct uthread *ut, void **retval) {
 
     return 0; 
 }
-

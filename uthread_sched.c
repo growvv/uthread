@@ -102,7 +102,7 @@ _uthread_resume_expired(struct sched *sched)
     // t_diff_usecs = _lthread_diff_usecs(sched->birth, _lthread_usec_now());  // 【lfr】因为lt->sleep_usecs赋值的时候也减掉了birth
 
     while ((ut = RB_MIN(uthread_rb_sleep, &sched->p->sleeping)) != NULL) {
-        printf("检查sleep任务\n"); 
+        // printf("您怎么一直在这sleep啊\n"); // 错怪您了
         if (ut->wakeup_time_usec <= _get_usec_now()) {  //  【lfr】sleep完了
             _uthread_cancel_event(ut);
             _uthread_desched_sleep(ut);    // 从sleep tree上移除
@@ -117,7 +117,7 @@ _uthread_resume_expired(struct sched *sched)
     }
 }
 
-// 【对timeout的理解还不到位】
+// 
 static uint64_t
 _uthread_min_timeout(struct sched *sched)
 {
@@ -137,7 +137,6 @@ _uthread_min_timeout(struct sched *sched)
 }
 
 
-// 大致上是对调度器中的POLL_EVENT_TYPE事件进行轮询，用得到的事件数去设置调度器的相关参数【有些地方还不太明白】
 static int
 _uthread_poll(void)
 {
@@ -327,6 +326,7 @@ _runtime_init() {
         struct p *new_p = &ptr_global->all_p[i];
         new_p->id = i;
         new_p->status = BIT(P_ST_IDLE);
+        new_p->tid = pthread_self();
         TAILQ_INIT(&new_p->ready);
         RB_INIT(&new_p->sleeping);
         RB_INIT(&new_p->waiting);
@@ -355,8 +355,10 @@ _runtime_init() {
     first_sched->ctx.ebp = (void *)stack - (3 * sizeof(void *)); 
     first_sched->ctx.eip = (void *)_sched_run;
 
- //   pthread_t tid;
- //   pthread_create(&tid,NULL,create_timewheel,NULL);
+    printf("create timewheel before\n");
+    pthread_t tid;
+    pthread_create(&tid,NULL,create_timewheel,NULL);
+    printf("tid:%ld\n",(long int)tid);
     return 0;
 }
 
@@ -384,7 +386,6 @@ void _register_event(struct uthread *ut, int sockfd, enum uthread_event e, uint6
     }
     // assert(epoll_ctl(_sched_get()->p->poller_fd, EPOLL_CTL_ADD, sockfd, &new_event) == 0);
     epoll_ctl(_sched_get()->p->poller_fd, EPOLL_CTL_ADD, sockfd, &new_event);
-    printf("---增加监听\n");
     printf("ctl after\n");
 
     ut->status |= BIT(status);
@@ -424,8 +425,7 @@ _uthread_poller_ev_is_eof(struct epoll_event *ev)
 void
 _uthread_sched_sleep(struct uthread *ut, uint64_t mescs) {
     if (mescs == 0)
-        mescs = (uint64_t)(1<<31-1) * 1000;   // 前面的是秒数
-        // mescs = 10000;
+        mescs = (uint64_t)(1<<31-1) * 1000;
 
     ut->wakeup_time_usec = _get_usec_now() + mescs * 1000;
     assert(RB_INSERT(uthread_rb_sleep, &ut->p->sleeping, ut) == 0);
