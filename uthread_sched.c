@@ -9,6 +9,7 @@
 #include "tree.h"
 
 #include "uthread_inner.h"
+#include "timer.h"
 
 #define FD_KEY(fd,e) (((int64_t)(fd) << (sizeof(int32_t) * 8)) | e)
 #define FD_EVENT(f) ((int32_t)(f))
@@ -33,7 +34,7 @@ _sched_work_done(struct p *p) {
     // printf("[sched id: %d] there are %d ready uthreads on current p [id: %d]\n", _sched_get()->id, i, p->id);
     /* end */
 
-    return TAILQ_EMPTY(&p->ready);
+    return TAILQ_EMPTY(&p->ready) && RB_EMPTY(&p->sleeping);
 }
 
 /* 用于在整个进程工作结束后释放全局资源，一定要在调用函数之前上锁，防止多个线程同时释放 */
@@ -97,7 +98,7 @@ _uthread_resume_expired(struct sched *sched)
     // t_diff_usecs = _lthread_diff_usecs(sched->birth, _lthread_usec_now());  // 【lfr】因为lt->sleep_usecs赋值的时候也减掉了birth
 
     while ((ut = RB_MIN(uthread_rb_sleep, &sched->p->sleeping)) != NULL) {
-
+        // printf("您怎么一直在这sleep啊\n"); // 错怪您了
         if (ut->wakeup_time_usec <= _get_usec_now()) {  //  【lfr】sleep完了
             _uthread_cancel_event(ut);
             _uthread_desched_sleep(ut);    // 从sleep tree上移除
@@ -143,6 +144,7 @@ _uthread_poll(void)
 
     sched->p->num_new_events = 0;
     usecs = _uthread_min_timeout(sched);
+    // printf("timeout after\n");
 
     /* never sleep if we have an lthread pending in the new queue */
     // 如果_lthread_min_timeout返回0，或者就绪队列不为空，就直接返回，不会继续去获取POLL_EVENT_TYPE事件
@@ -159,6 +161,7 @@ _uthread_poll(void)
 
     // 不断尝试获取就绪的POLL_EVENT_TYPE事件，直到获取成功
     while (1) {
+        printf("always epoll_wait\n");
         ret = epoll_wait(sched->p->poller_fd, sched->p->eventlist, 1024, t.tv_sec*1000.0 + t.tv_nsec/1000000.0);    
         if (ret == -1 && errno == EINTR) {  // The call was interrupted by a signal handler before... 见官网，这是一个可接受的error 
             continue;
@@ -176,8 +179,15 @@ _uthread_poll(void)
 }
 
 void handle_event(int fd, enum uthread_event ev, int is_eof) {
+    printf("收到读就绪\n");
     struct uthread* ut = _uthread_desched_event(fd, ev);  /* 将lt从sleeping tree或者waiting tree中移除 */ 
-    if (ut = NULL)  return;                                                                                                   \
+    
+    if(ut == NULL) {
+         printf("ut为NULL, %d\n", ev);
+    } else {
+        printf("ut:%d e:%d\n", (int)ut->id, ev);
+    }
+    if (ut == NULL)  return;                                                                                                  \
 
     if (is_eof)                                                    
         ut->status |= BIT(UT_ST_FDEOF);                          
@@ -194,12 +204,15 @@ _sched_run() {
 
     sched = _sched_get();
 start:
+    printf("always start\n");
     while (sched->p && !_sched_work_done(sched->p)) {
+        printf("还有任务呢\n");
         /* 执行就绪队列中的uthread */
         last_ready = TAILQ_LAST(&sched->p->ready, uthread_que);
         while (!TAILQ_EMPTY(&sched->p->ready)) {
             ut = TAILQ_FIRST(&sched->p->ready);
-            TAILQ_REMOVE(&sched->p->ready, ut, ready_next);
+            printf("从ready取出ut: %d\n", (int)ut->id);
+            TAILQ_REMOVE(&sched->p->ready, ut, ready_next);          
             _uthread_resume(ut);
             if (!sched->p)          // NOTE：如果原来的p已经解绑了，那last_ready也就失去意义了
                 break;
@@ -211,8 +224,10 @@ start:
         _uthread_resume_expired(sched);
 
 
+        printf("poll前\n");
         /*处理wait就绪的*/
         _uthread_poll(); 
+        printf("poll后\n");
         while (sched->p->num_new_events) {
             int id = --sched->p->num_new_events;
             int fd = sched->p->eventlist[id].data.fd;
@@ -229,6 +244,7 @@ start:
                errno = ECONNRESET;
 
             // 事件：读/写就绪
+            printf("监听到的东西: %d\n", sched->p->eventlist[id].events);
             handle_event(fd, UT_EVENT_RD, is_eof);
             handle_event(fd, UT_EVENT_WR, is_eof);
         }
@@ -289,6 +305,7 @@ _runtime_init() {
         struct p *new_p = &ptr_global->all_p[i];
         new_p->id = i;
         new_p->status = BIT(P_ST_IDLE);
+        new_p->tid = pthread_self();
         TAILQ_INIT(&new_p->ready);
         RB_INIT(&new_p->sleeping);
         RB_INIT(&new_p->waiting);
@@ -317,6 +334,10 @@ _runtime_init() {
     first_sched->ctx.ebp = (void *)stack - (3 * sizeof(void *)); 
     first_sched->ctx.eip = (void *)_sched_run;
 
+    printf("create timewheel before\n");
+    pthread_t tid;
+    pthread_create(&tid,NULL,create_timewheel,NULL);
+    printf("tid:%ld\n",(long int)tid);
     return 0;
 }
 
@@ -342,14 +363,21 @@ void _register_event(struct uthread *ut, int sockfd, enum uthread_event e, uint6
         status = UT_ST_WAIT_WR;
         new_event.events = EPOLLOUT | EPOLLONESHOT | EPOLLRDHUP;
     }
-    assert(epoll_ctl(_sched_get()->p->poller_fd, EPOLL_CTL_ADD, sockfd, &new_event) == 0);
+    // assert(epoll_ctl(_sched_get()->p->poller_fd, EPOLL_CTL_ADD, sockfd, &new_event) == 0);
+    epoll_ctl(_sched_get()->p->poller_fd, EPOLL_CTL_ADD, sockfd, &new_event);
+    printf("ctl after\n");
 
     ut->status |= BIT(status);
     ut->fd_wait = FD_KEY(sockfd, e);    // fd_wait是为了让红黑树上可以有键值
+    printf("insert before\n");
+    // printf("")
     RB_INSERT(uthread_rb_wait, &ut->p->waiting, ut);
+    printf("insert after\n");
     // if (timeout == -1)  // 先假定timeout一定为正数
     //     return; 
+    printf("sleep before\n");
     _uthread_sched_sleep(ut, timeout);
+    printf("sleep after\n");
     ut->fd_wait = -1;
     ut->status &= CLEARBIT(status);
 }
@@ -376,15 +404,17 @@ _uthread_poller_ev_is_eof(struct epoll_event *ev)
 void
 _uthread_sched_sleep(struct uthread *ut, uint64_t mescs) {
     if (mescs == 0)
-        return;
+        mescs = (uint64_t)(1<<31-1) * 1000;
 
     ut->wakeup_time_usec = _get_usec_now() + mescs * 1000;
     assert(RB_INSERT(uthread_rb_sleep, &ut->p->sleeping, ut) == 0);
     ut->status |= BIT(UT_ST_SLEEPING);
-    
+
+    printf("yield before\n");
     // 让出CPU，进入“阻塞”状态
     _uthread_yield();
 
+    printf("wake up\n");
     // 协程醒过来之后
     ut->status &= CLEARBIT(UT_ST_SLEEPING);
 }
