@@ -9,6 +9,7 @@
 #include <string.h>
 #include <arpa/inet.h>
 #include <pthread.h>
+#include "../timer.h"
 #include "../uthread.h"
 
 int server()

@@ -112,7 +112,7 @@ _uthread_resume_expired(struct sched *sched)
     }
 }
 
-// 【对timeout的理解还不到位】
+// 
 static uint64_t
 _uthread_min_timeout(struct sched *sched)
 {
@@ -132,7 +132,6 @@ _uthread_min_timeout(struct sched *sched)
 }
 
 
-// 大致上是对调度器中的POLL_EVENT_TYPE事件进行轮询，用得到的事件数去设置调度器的相关参数【有些地方还不太明白】
 static int
 _uthread_poll(void)
 {

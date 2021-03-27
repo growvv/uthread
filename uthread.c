@@ -212,13 +212,6 @@ _uthread_yield() {
 static void
 _uthread_exec(void *ut)
 {
-    // struct sigaction act;
-	// memset(&act, 0, sizeof(act));
-	// sigaddset(&act.sa_mask,SIGALRM);
-	// pthread_sigmask(SIG_BLOCK,&act.sa_mask,NULL);
-    // act.sa_handler = handler;
-    // sigaction(SIGUSR1,&act,NULL);
-
     ((struct uthread *)ut)->func(((struct uthread *)ut)->arg);
     
     /* 协程的函数体执行完后，需要更改协程的状态，然后yield */

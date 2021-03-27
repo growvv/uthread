@@ -45,14 +45,10 @@ int main (int argc, char **argv) {
     uthread_create(&ut2, b, NULL);
     // struct uthread *ut3 = NULL; 
     // uthread_create(&ut3, c, NULL);
-    // uthread_join(ut,NULL);
-    // uthread_join(ut2,NULL);
-    // uthread_join(ut3,NULL);
     
     for(;;) {
         printf("main is running...\n");
         sleep(1000);
-        // printf("main_main_main\n");
     }
     
     // printf("end");
