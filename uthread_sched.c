@@ -245,9 +245,9 @@ start:
                 break;
         }
 
-        if (!sched->p)
+        if (!sched->p)  // 再次：如果原来的p已经解绑了，那last_ready也就失去意义了
             break;
-            
+
         printf("poll前\n");
         /*处理wait就绪的*/
         _uthread_poll(); 

@@ -295,7 +295,8 @@ _uthread_resume(struct uthread *ut) {
     printf("current ut:%ld\n",ut->id);
     printf("current pid:%ld\n",pthread_self());
 
-    add_timer(2,ut);
+    ut->is_wating_yield_signal = 1;
+    add_timer(1,ut);
 
     _switch(&ut->ctx, &sched->ctx);
 

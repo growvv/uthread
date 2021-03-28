@@ -9,14 +9,19 @@
 #include "timer.h"
 #include "uthread_inner.h"
 
+static struct timer_wheel timer;
+
 void* create_timewheel(void* arg){
     printf("create timewheel successfully\n");
+    timer.current = 0;
+    memset(timer.slot, 0, sizeof(timer.slot));
+
     signal(SIGALRM, tick);
     struct itimerval new_value, old_value;
-    new_value.it_value.tv_sec = 1;
-    new_value.it_value.tv_usec = 0;
-    new_value.it_interval.tv_sec = 1;
-    new_value.it_interval.tv_usec = 0;
+    new_value.it_value.tv_sec = 0;
+    new_value.it_value.tv_usec = 10000;
+    new_value.it_interval.tv_sec = 0;
+    new_value.it_interval.tv_usec = 10000;
     setitimer(ITIMER_REAL, &new_value, &old_value);
     for(;;){
         sleep(1000);
@@ -47,6 +52,7 @@ void tick(int signo)
             printf("线程id： %ld\n", curr->ut->p->tid);
             // printf("向主线程发出测试信号\n");
             // pthread_kill(curr->ut->p->tid, SIGUSR2);
+
             if (curr->ut->is_wating_yield_signal == 1) {
                 printf("向主线程发出指示yield的信号\n");
                 assert(pthread_kill(curr->ut->p->tid, SIGUSR1) == 0);

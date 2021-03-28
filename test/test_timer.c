@@ -3,14 +3,14 @@
 #include "../timer.h"
 #include "../uthread.h"
 
-void handler_alias(){
-    printf("收到了指示执行yield的信号\n");
-    // add_timer(2, _sched_get()->cur_uthread);
-    sigset_t set;
-    sigaddset(&set, SIGUSR1);
-    sigprocmask(SIG_UNBLOCK, &set, NULL);
-    _uthread_yield();
-}
+// void handler_alias(){
+//     printf("收到了指示执行yield的信号\n");
+//     // add_timer(2, _sched_get()->cur_uthread);
+//     sigset_t set;
+//     sigaddset(&set, SIGUSR1);
+//     sigprocmask(SIG_UNBLOCK, &set, NULL);
+//     _uthread_yield();
+// }
 
 void a (void *x) {
     for (;;){
@@ -28,13 +28,14 @@ void b (void *x) {
     }
 }
 
-// void c (void *x) {
-//     printf("c is running\n");
-//     for (;;){
-//         sleep(1000);
-//         printf("cccccccccccc\n");
-//     }
-// }
+void c (void *x) {
+    printf("c is running\n");
+    // for (;;){
+    //     sleep(1000);
+    //     printf("cccccccccccc\n");
+        _uthread_yield();
+    // }
+}
 
 
 int main (int argc, char **argv) {
@@ -43,8 +44,8 @@ int main (int argc, char **argv) {
     uthread_create(&ut, a, NULL);
     struct uthread *ut2 = NULL;
     uthread_create(&ut2, b, NULL);
-    // struct uthread *ut3 = NULL; 
-    // uthread_create(&ut3, c, NULL);
+    struct uthread *ut3 = NULL; 
+    uthread_create(&ut3, c, NULL);
     
     for(;;) {
         printf("main is running...\n");
