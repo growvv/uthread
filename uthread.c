@@ -5,8 +5,11 @@
 #include <stdio.h>      // perror
 #include <errno.h>      // errno
 #include <sys/types.h>
+#include <signal.h>
+#include <string.h>
 
 #include "uthread_inner.h"
+#include "timer.h"
 
 int _switch(struct context *new_ctx, struct context *cur_ctx);
 #ifdef __i386__
@@ -84,6 +87,18 @@ static pthread_once_t key_once = PTHREAD_ONCE_INIT;     // 与该变量绑定的
 //     free((data);     
 // }
 
+void handler(){
+    printf("收到了指示执行yield的信号\n");
+
+    // 执行信号处理函数期间会自动屏蔽该信号，而yield出去之后handler并没有执行结束
+    // 因此，这里需要解除对SIGUSR1的屏蔽，
+    sigset_t set;
+    sigaddset(&set, SIGUSR1);
+    sigprocmask(SIG_UNBLOCK, &set, NULL);
+    
+    _uthread_yield();
+}
+
 /* 被pthread_once绑定的函数，只由某一个线程执行一次，之后其它线程不会再执行 */
 static void    
 _uthread_key_create(void) {
@@ -109,6 +124,8 @@ _uthread_create_main() {
     ut_main->status = BIT(UT_ST_READY);  // 此处为直接赋值，会同时清掉NEW状态
     ut_main->ut_joined = NULL;
     ut_main->p = sched->p;
+    ut_main->fd_wait = -1;
+    ut_main->is_wating_yield_signal = 1;
 
     TAILQ_INSERT_TAIL(&sched->p->ready, ut_main, ready_next);
     ptr_global->n_uthread++;         // 此处不用加锁，还没有别的线程
@@ -117,6 +134,14 @@ _uthread_create_main() {
      * 此时调度器已经创建并初始化完毕，可以直接切换到调度器，切换的同时保存了自己的上下文； 
      * 调度器进入调度循环后马上又会执行main协程，从而继续执行main函数之后的代码 */
     _switch(&sched->ctx, &ut_main->ctx); 
+
+    /* 为主线程注册用于抢占的信号处理函数 */
+    struct sigaction act;
+	memset(&act, 0, sizeof(act));
+	sigaddset(&act.sa_mask,SIGALRM);
+	pthread_sigmask(SIG_BLOCK,&act.sa_mask,NULL);
+    act.sa_handler = handler;
+    sigaction(SIGUSR1,&act,NULL);
 
     return 0;
 }
@@ -170,8 +195,12 @@ uthread_create(struct uthread **new_ut, void *func, void *arg) {
     ut->wakeup_time_usec = 0;    // 这个不初始化也行
     ut->ut_joined = NULL;
     ut->p = sched->p;
+    ut->fd_wait = -1;
+    ut->is_wating_yield_signal = 1;
     
     TAILQ_INSERT_TAIL(&sched->p->ready, ut, ready_next);
+
+//    add_timer(10,ut);
 
     return 0;
 }
@@ -180,6 +209,7 @@ uthread_create(struct uthread **new_ut, void *func, void *arg) {
 void
 _uthread_yield() {
     struct uthread *ut = _sched_get()->cur_uthread;
+    ut->is_wating_yield_signal = 0;
     _switch(&_sched_get()->ctx, &ut->ctx);
 }
 
@@ -229,7 +259,7 @@ _uthread_free_main(struct uthread *ut) {
     assert(pthread_mutex_unlock(&ptr_global->mutex) == 0);
 }
 
-static inline int
+inline int
 _uthread_sleep_cmp(struct uthread *u1, struct uthread *u2)
 {
     if (u1->wakeup_time_usec < u2->wakeup_time_usec)
@@ -240,34 +270,19 @@ _uthread_sleep_cmp(struct uthread *u1, struct uthread *u2)
 }
 
 // 生成uthread_rb_sleep的红黑树操作
-RB_GENERATE(uthread_rb_sleep, uthread, sleep_node, _uthread_sleep_cmp); // 生成 sleep uthread 的红黑树操作函数
+// RB_GENERATE(uthread_rb_sleep, uthread, sleep_node, _uthread_sleep_cmp); // 生成 sleep uthread 的红黑树操作函数
 
-// “阻塞”协程
-void
-_uthread_sched_sleep(struct uthread *ut, uint64_t mescs) {
-    if (mescs == 0)
-        return;
-
-    ut->wakeup_time_usec = _get_usec_now() + mescs * 1000;
-    assert(RB_INSERT(uthread_rb_sleep, &ut->p->sleeping, ut) == 0);
-    ut->status |= BIT(UT_ST_SLEEPING);
-    
-    // 让出CPU，进入“阻塞”状态
-    _uthread_yield();
-
-    // 协程醒过来之后
-    ut->status &= CLEARBIT(UT_ST_SLEEPING);
+inline int
+_uthread_wait_cmp(struct uthread *ut1, struct uthread *ut2) {
+    if (ut1->fd_wait < ut2->fd_wait)
+        return -1;
+    if (ut1->fd_wait == ut2->fd_wait)
+        return 0;
+    return 1;
 }
 
-// 将ut从所属p的sleeping树上摘下，修改ut的状态为ready
-void
-_uthread_desched_sleep(struct uthread *ut) {
-    if (ut->status & BIT(UT_ST_SLEEPING)) {
-        RB_REMOVE(uthread_rb_sleep, &ut->p->sleeping, ut);
-        ut->status &= CLEARBIT(UT_ST_SLEEPING);
-        ut->status |= BIT(UT_ST_READY);
-    } 
-}
+// RB_GENERATE(uthread_rb_wait, uthread, wait_node, _uthread_wait_cmp);
+
 
 int
 _uthread_resume(struct uthread *ut) {
@@ -277,6 +292,11 @@ _uthread_resume(struct uthread *ut) {
         _uthread_init(ut);
 
     sched->cur_uthread = ut;
+    printf("current ut:%ld\n",ut->id);
+    printf("current pid:%ld\n",pthread_self());
+
+    add_timer(2,ut);
+
     _switch(&ut->ctx, &sched->ctx);
 
     sched->cur_uthread = NULL;
@@ -296,7 +316,7 @@ _uthread_resume(struct uthread *ut) {
     } else {
         TAILQ_INSERT_TAIL(&sched->p->ready, ut, ready_next); // 若不是EXITED状态，还需要把ut放回ready队列
     }
-
+    // printf("resume执行完毕\n");
     return 0;
 }
 
@@ -317,6 +337,7 @@ uthread_io_read(int fd, void *buf, size_t nbytes) {
     pthread_t t;
 
     cur_sched = _sched_get();
+    cur_sched->cur_uthread->is_wating_yield_signal = 0;
 
     if (cur_sched->p && !TAILQ_EMPTY(&cur_sched->p->ready)) {
         new_sched = TAILQ_FIRST(&ptr_global->sched_idle);
@@ -324,6 +345,7 @@ uthread_io_read(int fd, void *buf, size_t nbytes) {
         new_sched->p = cur_sched->p;
         new_sched->p->sched = new_sched;    // 修改p使得uthread的sched改变（ut->p->sched来获取）
         cur_sched->p = NULL;
+
 
         /* 为新调度器创建一个线程 */
         printf("creating a new thread for blocked io...\n");
@@ -411,4 +433,3 @@ uthread_join(struct uthread *ut, void **retval) {
 
     return 0; 
 }
-
