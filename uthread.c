@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "uthread_inner.h"
+#include <dlfcn.h>
 #include "timer.h"
 
 int _switch(struct context *new_ctx, struct context *cur_ctx);
@@ -350,7 +351,9 @@ uthread_io_read(int fd, void *buf, size_t nbytes) {
 
         /* 为新调度器创建一个线程 */
         printf("creating a new thread for blocked io...\n");
-        assert(pthread_create(&t, NULL, _sched_create_another, new_sched) == 0);
+                int (*mypthread_create)(pthread_t *tidp,const pthread_attr_t *attr,void *(*start_rtn)(void*),void *arg) = dlsym(RTLD_NEXT, "pthread_create");
+        assert(mypthread_create(&t, NULL, _sched_create_another, new_sched) == 0);
+        // assert(pthread_create(&t, NULL, _sched_create_another, new_sched) == 0);
         printf("created successively!\n");
     }
     
@@ -375,7 +378,7 @@ uthread_self(void) {
     struct sched *sched = _sched_get();
     if (!sched)
         return -1;
-    return sched->cur_uthread->id;
+    return sched->cur_uthread;
 }
 
 // 协程终止后，会释放掉协程栈；

@@ -2,30 +2,30 @@
 */
 
 #include <stdio.h>
-#include<unistd.h>
+#include <unistd.h>
 
 #include "uthread.h"
 
 void 
 a (void *x) {
-    printf("a-ut id: %ld .\n", uthread_self());
+    printf("a-ut id: %ld .\n", pthread_self());
     printf("a is running.\n");
     printf("a about to sleep for 2s.\n");
     sleep(2);
     printf("a is exiting\n");
-    uthread_exit(NULL);
+    pthread_exit(NULL);
 }
 
 int main() {
 
     printf("main is running.\n");
 
-    struct uthread *ut = NULL;
-    uthread_create(&ut, a, NULL);
-    printf("main-ut id: %ld .\n", uthread_self());
+    pthread_t p;
+    uthread_create(&p, a, NULL);
+    printf("main-ut id: %ld .\n", pthread_self());
 
     printf("main about to join a.\n");
-    uthread_join(ut, NULL);
+    pthread_join(ut, NULL);
     printf("main waken up.\n");
 
     printf("main is existing.\n\n");

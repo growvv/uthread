@@ -5,6 +5,7 @@
         "queue.h": "c",
         "epoll.h": "c",
         "uthread.h": "c",
-        "stdlib.h": "c"
+        "stdlib.h": "c",
+        "myhook.h": "c"
     }
 }
