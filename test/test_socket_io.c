@@ -10,7 +10,7 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 #include "uthread.h"
-
+#include "myhook.h"
 // #include <string.h>
 
 int client()
@@ -22,7 +22,7 @@ int client()
     char szBuff[BUFSIZ] = {0};
 
     /* 创建套接字描述符 */
-    nFd = uthread_socket(AF_INET,SOCK_STREAM,0);
+    nFd = socket(AF_INET,SOCK_STREAM,0);
     if (-1 == nFd)
     {
         perror("socket:");
@@ -34,7 +34,7 @@ int client()
     serverAddr.sin_port = htons(54500);//默认以8080端口连接
 
     /* 和服务器端建立连接 */
-    nRet = uthread_connect(nFd,(struct sockaddr*)&serverAddr,sizeof(serverAddr));
+    nRet = connect(nFd,(struct sockaddr*)&serverAddr,sizeof(serverAddr));
     if (nRet == -1)
     {
         printf("connect fail\n");
@@ -67,7 +67,7 @@ int server()
     char szBuff[BUFSIZ] = {0};
 
     /* 创建一个socket描述符 */
-    nFd = uthread_socket(AF_INET,SOCK_STREAM,0);
+    nFd = socket(AF_INET,SOCK_STREAM,0);
     if(-1 == nFd)
     {
         perror("socket create fail\n");
@@ -98,7 +98,7 @@ int server()
 
     /* 等待客户端发来的tcp连接 ,当客户端连接进来之后，返回两个之间的唯一的socket连接，存放在linkFd之中*/
     clientAddrLen = sizeof(struct sockaddr_in);
-    linkFd = uthread_accept(nFd,(struct sockaddr*)&clientAddr,&clientAddrLen);
+    linkFd = accept(nFd,(struct sockaddr*)&clientAddr,&clientAddrLen);
     if(-1 == linkFd)
     {
         perror("accept fail");
@@ -134,12 +134,12 @@ void* myclient(void* data)
 }
 
 
-int main()
-{
-    struct uthread* pids[2];
-    uthread_create(&pids[0], myserver, NULL);
+int main() {  
+    enable_hook();
+    pthread_t server_p,client_p;
+    pthread_create(&server_p,NULL, myserver, NULL);
     sleep(1);
-    uthread_create(&pids[1], myclient, NULL);
+    pthread_create(&client_p,NULL, myclient, NULL);
     
     // for (int t = 0; t < 2; t++) {
     //     uthread_join(pids[t], NULL);

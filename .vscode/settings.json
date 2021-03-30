@@ -6,6 +6,8 @@
         "epoll.h": "c",
         "uthread.h": "c",
         "stdlib.h": "c",
-        "myhook.h": "c"
+        "myhook.h": "c",
+        "pthread.h": "c",
+        "socket.h": "c"
     }
 }

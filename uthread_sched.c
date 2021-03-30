@@ -10,6 +10,7 @@
 
 #include "uthread_inner.h"
 #include "timer.h"
+#include <dlfcn.h>
 
 #define FD_KEY(fd,e) (((int64_t)(fd) << (sizeof(int32_t) * 8)) | e)
 #define FD_EVENT(f) ((int32_t)(f))
@@ -361,7 +362,9 @@ _runtime_init() {
 
     printf("create timewheel before\n");
     pthread_t tid;
-    pthread_create(&tid,NULL,create_timewheel,NULL);
+    int (*mypthread_create)(pthread_t *tidp,const pthread_attr_t *attr,void *(*start_rtn)(void*),void *arg) = dlsym(RTLD_NEXT, "pthread_create");
+    mypthread_create(&tid, NULL, create_timewheel, NULL);
+    // pthread_create(&tid,NULL,create_timewheel,NULL);
     printf("tid:%ld\n",(long int)tid);
     return 0;
 }

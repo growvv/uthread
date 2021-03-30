@@ -38,9 +38,9 @@ void* create_timewheel(void* arg){
 
 void tick(int signo)
 {
-    printf("tick\n");
+    // printf("tick\n");
     struct timer_node **cur = &timer.slot[timer.current];
-    printf("current: %d\n", timer.current);
+    // printf("current: %d\n", timer.current);
     while (*cur) {
         struct timer_node *curr = *cur;
         printf("tick rotation: %d\n", curr->rotation);
