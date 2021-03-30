@@ -25,11 +25,11 @@ int  uthread_socket(int domain, int type, int protocol) {
 int uthread_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
     int res;
     struct uthread *ut = _sched_get()->cur_uthread;
-    int (*sys_accpet)(int sockfd, struct sockaddr *addr, socklen_t *addrlen) = dlsym(RTLD_NEXT, "accpet");
+    int (*sys_accept)(int sockfd, struct sockaddr *addr, socklen_t *addrlen) = dlsym(RTLD_NEXT, "accept");
     printf("uthread_accept id: %d\n", (int)ut->id);
 
     while (1) {
-        res = sys_accpet(sockfd, addr, addrlen);
+        res = sys_accept(sockfd, addr, addrlen);
         printf("uthraed_accept res: %d\n", res);
         if (res == -1) {
             // 若现在没有收到连接、若无法继续创建一个新的fd，“阻塞”协程，并注册一个读事件

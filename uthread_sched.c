@@ -331,7 +331,10 @@ _runtime_init() {
         struct p *new_p = &ptr_global->all_p[i];
         new_p->id = i;
         new_p->status = BIT(P_ST_IDLE);
-        new_p->tid = pthread_self();
+        long  (*sys_pthread_self)() = dlsym(RTLD_NEXT, "pthread_self");
+        new_p->tid = sys_pthread_self();
+        // new_p->tid = pthread_self();
+        printf("new_p->tid: %ld\n", new_p->tid);
         TAILQ_INIT(&new_p->ready);
         RB_INIT(&new_p->sleeping);
         RB_INIT(&new_p->waiting);

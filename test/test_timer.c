@@ -1,8 +1,8 @@
 #include <stdio.h>
 #include "string.h"
-#include "../timer.h"
-#include "../uthread.h"
-
+#include "timer.h"
+#include "uthread.h"
+#include <pthread.h>
 // void handler_alias(){
 //     printf("收到了指示执行yield的信号\n");
 //     // add_timer(2, _sched_get()->cur_uthread);
@@ -28,7 +28,7 @@ void b (void *x) {
     }
 }
 
-void c (void *x) {
+void * c (void *x) {
     printf("c is running\n");
     // for (;;){
     //     sleep(1000);
@@ -40,16 +40,21 @@ void c (void *x) {
 
 int main (int argc, char **argv) {
     // pthread_create(&global_pid, NULL, thread_for_test, NULL);
-    struct uthread *ut = NULL;
-    uthread_create(&ut, a, NULL);
-    struct uthread *ut2 = NULL;
-    uthread_create(&ut2, b, NULL);
-    struct uthread *ut3 = NULL; 
-    uthread_create(&ut3, c, NULL);
+    enable_hook();
+    pthread_t p1,p2,p3;
+    pthread_create(&p1,NULL, a, NULL);
+    pthread_create(&p2,NULL, b, NULL);
+    pthread_create(&p3,NULL, c, NULL);
+
+    
+    // struct uthread *ut1, *ut2, *ut3;
+    // uthread_create(ut1, a, NULL);
+    // uthread_create(ut2, b, NULL);
+    // uthread_create(ut3, c, NULL);
     
     for(;;) {
         printf("main is running...\n");
-        sleep(1000);
+        sleep(1);
     }
     
     // printf("end");
