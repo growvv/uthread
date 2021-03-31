@@ -166,7 +166,7 @@ Linux内核（2.6版本）加入了内核抢占机制。内核抢占指用户程
 
 在设计完时间轮的相关结构后，我们设计了相应的控制逻辑。整体的逻辑流程图如下：
 <div align = center>
-    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(10).png" width=50% height=60% style="zoom:85%;" />
+    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(10).png" width=65% height=75% style="zoom:85%;" />
 </div>
 
 
