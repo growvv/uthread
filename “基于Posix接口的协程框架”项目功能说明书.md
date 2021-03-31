@@ -497,7 +497,10 @@ int main() {
 }
 ```
 效果展示：
-![avatar](https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(12).png)
+<div align = center>
+    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(12).png" width=50% height=60% style="zoom:85%;" />
+</div>
+
 
 3. test_socket_io.c  
 测试socket io相关函数，包括socket，connect，accapt，read和write等，这些接口都是非阻塞的，当监听到对应事件就绪时才会回来继续执行。  
@@ -516,7 +519,10 @@ int main() {
 }
 ```
 效果展示：
-![avatar](https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(13).png)
+<div align = center>
+    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(13).png" width=50% height=60% style="zoom:85%;" />
+</div>
+
 
 4. test_timer.c  
 
@@ -551,7 +557,10 @@ int main (int argc, char **argv) {
 }
 ```
 效果展示：
-![avatar](https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(14).png)
+<div align = center>
+    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(14).png" width=50% height=60% style="zoom:85%;" />
+</div>
+
 
 5. test_disk_io.c
  
@@ -587,4 +596,6 @@ main(int argc, char **argv) {
 }
 ```
 测试效果如下图所示
-![](https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/20210331210546.png)
+<div align = center>
+    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/20210331210546.png" width=50% height=60% style="zoom:85%;" />
+</div>
