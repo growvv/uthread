@@ -77,7 +77,7 @@
 
 首先，会初始化sched、p、ut三大核心组件相关的的全局数据结构，包括存储组件信息的全局数组、用于记录组件使用情况和后续分配的数据结构位图、创建调度器需要的栈空间；此外，还要为全局数据的访问初始化互斥锁。然后，为当前线程创建核心调度循环的上下文，并为当前线程绑定一个可用的sched与p。接着，创建时间轮监控线程，用于运行时系统的抢占机制——至此，运行时的大部分初始化工作就完成了。随后，系统会把main函数这个线程的执行流封装进一个uthread中，让main函数成为一个普通的协程。系统把main协程放入p的就绪队列，随即进行一次_switch调用切换到调度器。调度器开始执行并发现自己绑定的p中已经存在任务，马上从任务队列中取出main协程执行。此后，线程的执行流就遵循“协程-调度器-协程”的模式，整个系统的调度便以协程为粒度进行了。运行时系统启动的流程图如下：
 <div align = center>
-    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(2).png" width=30% height=40% style="zoom:50%;" />
+    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(2).png" width=30% height=25% style="zoom:50%;" />
 </div>
 
 
@@ -85,7 +85,7 @@
 
 每一个线程都会绑定一个调度器，绑定的实质是为线程绑定一个用于执行核心调度循环的_sched_run函数，以及为调度器的执行提供一个sched结构体。运行时初始化完毕之后，线程就始终运行在调度循环之中，执行流会在调度器和协程之间反复切换。从调度器的角度来看，调度循环主要分为四个环节：检查是否有到达唤醒时间的处于睡眠状态的任务、执行就绪队列中的任务、为阻塞在socket I/O上的协程监听相关的事件、处理监听到的就绪事件。核心调度循环的流程图如下：
 <div align = center>
-    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(3).png" width=35% height=40% style="zoom:50%;" />
+    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(3).png" width=35% height=30% style="zoom:50%;" />
 </div>
 
 
@@ -116,7 +116,7 @@
 - 如果是成功返回，例如连接成功、send n bytes、recv n bytes等，直接将该结果返回，供上层使用；
 - 如果返回值是异常值，则进行出错处理；
 <div align = center>
-    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(5).png" width=40% height=40% style="zoom:23%;" />
+    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(5).png" width=50% height=50% style="zoom:23%;" />
 </div>
 
 
@@ -143,14 +143,20 @@ Linux内核（2.6版本）加入了内核抢占机制。内核抢占指用户程
 在1.14之前，抢占的一种方式与运行时系统监控有关，监控循环会将发生阻塞的Goroutine抢占，解绑 P 与 M，从而让其他的线程能够获得P 继续执行其他的 Goroutine。通过由sysmon线程初始化，该线程专门用于监控包括长时间运行的协程在内的运行时。当某个协程被检测到运行超过 10ms 后，sysmon向当前的线程发出一个抢占信号。  
 
 起初runtime.main会创建一个额外的M运行sysmon函数,抢占就是在sysmon中实现的. sysmon会进入一个无限循环,第一轮会休眠20us,之后每次休眠时间倍增,最大不会超过10ms.sysmon会调用retake()函数，retake()函数会遍历所有的P，如果一个P处于Psyscall状态，会被调用handoffp来解绑MP关系。 如果处于Prunning执行状态，一直执行某个G且已经连续执行了 > 10ms的时间，就会被抢占。
-![avatar](https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(8).png)
+<div align = center>
+    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(8).png" width=50% height=60% style="zoom:85%;" />
+</div>
+
 
 ###### uthread抢占机制设计
 
 我们整体的抢占调度设计方案也是借鉴于Go中的抢占调度方式，在初始化系统时会创建一个监控线程用于监控进程中所有uthread的运行情况。我们在监控线程中会运行一个时间轮定时器，所有的uthread在调度器sched上开始运行时会在该定时器上进行注册。时间轮进行轮转，当发现当前时刻有协程运行时间达到阈值(10ms)时，我们就会给该协程所在线程发送信号通知该其需要执行流转动作。同时，为了区别主动yield让出的uthread和计算密集型uthread（运行时间到达10ms，定时器时间到达），我们在uthread结构体中加入is_waiting_yield_signal参数用来标识。在uthread初始化时该标志位为1。若uthread主动让出，我们在uthread_yield()中将is_waiting_yield_signal置为0。在uthread_resume()中再置回1。这样我们在时间轮tick函数中，只要筛选给is_waiting_yield_signal=1的uthread发信号即可。  
 
 我们使用如下结构来模拟时间轮定时器的功能。轮中的实线指针指向轮子上的一个槽（slot），它以恒定的速度顺时针转动，每转动一步就指向下一个槽，每次转动称为一个滴答（tick）。一个滴答的时间称为是间轮的槽间隔si（slot interval），它实际上就是心跳时间。该轮共有N个槽，因此它运转一周的时间是N×si 。每个槽指向一条定时器链表，每条链表上的定时器具有相同的特性：它们的定时时间相差N×si的整数倍。时间轮正是利用这个关系将定时器散列到不同的链表中。假如现在指针指向槽cs，我们要添加一个定时时间为ti的定时器，则该定时器将被插入ts（timer slot）对应的链表中：ts = (cs + (ti / si)) %N。
-![avatar](https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(9).png)
+<div align = center>
+    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(9).png" width=50% height=60% style="zoom:85%;" />
+</div>
+
 
 在上图中，定时器中expire表示到期时间，rotation表示节点在时间轮转了几圈后才到期。当当前时间指针指向某个bucket时，不能像简单时间轮那样直接对bucket下的所有节点执行超时动作，而是需要对链表中节点遍历一遍，判断轮子转动的次数是否等于节点中的rotation值，当两者相等时，方可执行超时操作。  
 
