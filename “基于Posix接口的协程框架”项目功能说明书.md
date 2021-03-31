@@ -205,7 +205,7 @@ int pthread_create(pthread_t *tidp, const pthread_attr_t *attr, void *(*start_rt
 **pthread_join**
 
 ```C
-int pthread_join(pthread_t thread, void **retval);
+int pthread_join(pthread_t thread, void **retval);
 ```
 连接到另一个协程。一个协程只有被标记为detached，或者被其它协程连接，该协程退出后才会完全释放自身所占有的资源，否则该协程的id无法被新创建的协程使用。 
 
@@ -233,7 +233,7 @@ void pthread_exit(void *retval);
 **pthread_self**
 
 ```C
-pthread_t pthread_self(void);
+pthread_t pthread_self(void);
 ```
 返回协程的结构体地址。pthread_t 为posix类型名，用于返回当前协程的结构体地址的数值。
 
@@ -246,7 +246,7 @@ pthread_t pthread_self(void);
 **pthread_detach**
 
 ```C
-int pthread_detach(pthread_t thread); 
+int pthread_detach(pthread_t thread); 
 ```
 将协程标记为分离状态。被detach的协程不允许被其它协程连接，退出后可以直接由运行时回收该协程所占有的全部资源。
 
