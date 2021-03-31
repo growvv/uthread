@@ -1,37 +1,36 @@
 # 7-湖上摸鱼家
 
+湖北上海，两地摸鱼 
+
 #### 介绍
-湖北上海，两地摸鱼
+
+这是一个纯C实现的POSIX风格的协程库，具有轻量、高效、用户无感知的特点。
+
+主要特性：
+1. 128k协程栈的轻量级协程，通过汇编实现用户态的上下文切换
+2. 基于GMP架构，多个协程复用多个线程，兼具灵活、高效的协程管理方式
+3. 通过对pthread接口以及socket I/O库函数进行hook，保证用户无感知
+4. 基于epoll与非阻塞式I/O实现协程级别的socket读写
+5. 基于红黑树实现对定时休眠任务的管理
+6. 通过将任务集合会转移到新的线程上，使得阻塞系统调用不会干扰其它协程的执行
+7. 基于时间轮定时器实现10ms级的抢占
+
+![](https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/20210331212521.png)
 
 #### 软件架构
-软件架构说明
 
+我们主要参考Golang的GMP协程调度模型进行项目代码的架构设计，架构示意图如下：
 
-#### 安装教程
+![avatar](https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image.png)
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+架构涉及三个核心组件，图中KSE为内核调度实体，即内核线程。三个组件简要说明如下：
+- ut：协程实体，是运行时系统调度的基本单位；因协程在某种意义上也可以被理解为“用户线程”，所以此处是取user thread之意，在编码时协程的结构体被命名为uthread。  
+- p：对单个线程上所有协程任务的封装，包括就绪任务、阻塞任务、定时的休眠任务。  
+- sched：协程的调度器，一个内核线程与一个调度器一一对应。  
+
 
 #### 使用说明
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
-
-#### 参与贡献
-
-1.  Fork 本仓库
-2.  新建 Feat_xxx 分支
-3.  提交代码
-4.  新建 Pull Request
-
-
-#### 特技
-
-1.  使用 Readme\_XXX.md 来支持不同的语言，例如 Readme\_en.md, Readme\_zh.md
-2.  Gitee 官方博客 [blog.gitee.com](https://blog.gitee.com)
-3.  你可以 [https://gitee.com/explore](https://gitee.com/explore) 这个地址来了解 Gitee 上的优秀开源项目
-4.  [GVP](https://gitee.com/gvp) 全称是 Gitee 最有价值开源项目，是综合评定出的优秀开源项目
-5.  Gitee 官方提供的使用手册 [https://gitee.com/help](https://gitee.com/help)
-6.  Gitee 封面人物是一档用来展示 Gitee 会员风采的栏目 [https://gitee.com/gitee-stars/](https://gitee.com/gitee-stars/)
+1. 编辑库配置文件/etc/ld.so.conf.d/usr-libs.conf，写入库文件所在目录/usr/local/lib  
+2. 执行命令行ldconfig更新/etc/ld.so.cache文件
+3. 在代码中包含uthread.h头文件
