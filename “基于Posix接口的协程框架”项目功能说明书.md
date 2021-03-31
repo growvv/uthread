@@ -432,12 +432,9 @@ uthread版本的writev，用于写入一个数组的数据。
 ## 四.操作指引
 
 ```
-1. 向库配置文件/etc/ld.so.conf.d/usr-libs.conf中，写入库文件所在目录/usr/local/lib  
-vim /etc/ld.so.conf.d/usr-libs.conf    
-/usr/local/lib  
-2. 更新/etc/ld.so.cache文件
-执行ldconfig 
-3. 引入uthread.h
+1. 编辑库配置文件/etc/ld.so.conf.d/usr-libs.conf，写入库文件所在目录/usr/local/lib  
+2. 执行命令行ldconfig更新/etc/ld.so.cache文件
+3. 在代码中包含uthread.h头文件
 ```
 
 
@@ -506,7 +503,7 @@ int main() {
 测试socket io相关函数，包括socket，connect，accapt，read和write等，这些接口都是非阻塞的，当监听到对应事件就绪时才会回来继续执行。  
 我们在一个程序中创建两个uthread，分别执行客户端程序和服务端程序，客户端接收键盘的输入，发送数据到socket fd；服务端从socket fd读取出数据，并打印出来。
 
-```
+```C
 int main() {  
     enable_hook();
 
