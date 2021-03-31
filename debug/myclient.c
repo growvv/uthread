@@ -10,6 +10,7 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 #include "../uthread.h"
+#include "../myhook.h"
 
 int client()
 {
@@ -48,7 +49,9 @@ int client()
         /* 从终端读取数据 */
         memset(szBuff,0,BUFSIZ);
         // nReadLen = uthread_read(STDIN_FILENO,szBuff,BUFSIZ, 1000*10);  // 10s
+        printf("before read\n");
         nReadLen = read(STDIN_FILENO,szBuff,BUFSIZ);
+        printf("after read\n");
         if (nReadLen > 0)
         {
             printf("write before\n");
@@ -67,6 +70,7 @@ void* myclient(void* data)
 
 int main()
 {
+    enable_hook();
     struct uthread* pid;
     uthread_create(&pid, myclient, NULL);
     uthread_main_end();

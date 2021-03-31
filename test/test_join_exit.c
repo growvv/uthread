@@ -10,7 +10,7 @@
 void *a () {
     printf("a-ut id: %ld .\n", pthread_self());
     printf("a is running.\n");
-    // pthread_exit(NULL);
+    pthread_exit(NULL);
     printf("a about to sleep for 2s.\n");
     sleep(2);
     printf("a is exiting\n");

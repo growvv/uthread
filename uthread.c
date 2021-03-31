@@ -389,6 +389,7 @@ uthread_exit(void *retval) {
     if (retval != NULL) {
         *((int *)retval) = 0;
     }
+    _uthread_yield();
 } 
 
 // 参数不是id，而是结构体指针

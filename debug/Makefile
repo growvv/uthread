@@ -1,6 +1,6 @@
 CC = gcc            #定义变量并赋值
 CFLAGS =  -g -pthread -I .
-SRC = ../uthread.c ../uthread_sched.c ../uthread_socket.c ../timer.c
+SRC = ../uthread.c ../uthread_sched.c ../uthread_socket.c ../timer.c ../myhook.c
 
 all: myserver myclient
 
