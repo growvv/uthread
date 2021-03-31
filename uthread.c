@@ -172,7 +172,7 @@ uthread_create(struct uthread **new_ut, void *func, void *arg) {
     /* 执行用户发起的创建请求 */
     if ((ut = calloc(1, sizeof(struct uthread))) == NULL) {
         perror("Failed to allocate memory for new uthread");
-        return errno;
+        return -1;
     }
     assert(pthread_mutex_lock(&ptr_global->mutex) == 0);
     ptr_global->n_uthread++;         // 修改全局数据要加锁
@@ -186,7 +186,7 @@ uthread_create(struct uthread **new_ut, void *func, void *arg) {
     if (posix_memalign(&ut->stack, getpagesize(), STACK_SIZE)) {    // 从堆上为协程分配栈空间
         free(ut);
         perror("Failed to allocate stack for new uthread");   
-        return errno;
+        return -1;
     }
     ut->stack_size = STACK_SIZE;
     ut->status = BIT(UT_ST_NEW);
@@ -398,9 +398,10 @@ uthread_self(void) {
 // 但协程的id在位图中的状态位依然不变，直到被uthread_join连接后才会释放位图中的位
 void
 uthread_exit(void *retval) {
-    _sched_get()->cur_uthread->status |= BIT(UT_ST_EXITED);
-    if (retval != NULL) {
-        *((int *)retval) = 0;
+    struct uthread *ut = _sched_get()->cur_uthread;
+    ut->status |= BIT(UT_ST_EXITED);
+    if (retval != NULL && ut->ut_joined != NULL && ut->retval != NULL) {
+        *(ut->retval) = retval;
     }
     _uthread_yield();
 } 
@@ -420,14 +421,20 @@ int
 uthread_join(struct uthread *ut, void **retval) {
     struct uthread* cur_ut = _sched_get()->cur_uthread;
     // 不可以join自己
-    if (ut == cur_ut)
-        return EDEADLK;
+    if (ut == cur_ut) {
+        errno = EDEADLK;
+        return -1;
+    }
     // 如果ut为detached则不可join
-    if (ut->status & BIT(UT_ST_DETACHED))
-        return EINVAL;
+    if (ut->status & BIT(UT_ST_DETACHED)) {
+        errno = EINVAL;
+        return -1;
+    }
     // 如果另一个ut已经阻塞在对该ut的连接上（这好像是未定义的？）
-    if (ut->ut_joined != NULL)
-        return EINVAL;
+    if (ut->ut_joined != NULL) {
+        errno = EINVAL;
+        return -1;
+    }
 
     // 如果ut已经终止了，立即释放位图槽，并返回
     if (ut->status & BIT(UT_ST_EXITED)) {
@@ -443,7 +450,8 @@ uthread_join(struct uthread *ut, void **retval) {
     // ut终止，cur_ut醒来
     if (cur_ut->status & BIT(UT_ST_EXPIRED)) {
         ut->ut_joined = NULL;
-        return 2;   // 【暂定超时返回2】
+        ut->retval = retval;
+        return 1;   // 【暂定超时返回1】
     }
 
     // 销毁剩余的资源

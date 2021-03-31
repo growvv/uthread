@@ -10,18 +10,18 @@
 
 #include "uthread.h"
 
-int pthread_create(pthread_t *tidp,const pthread_attr_t *attr,void *(*start_rtn)(void*),void *arg) {  
+int pthread_create(pthread_t *tidp, const pthread_attr_t *attr,void *(*start_rtn)(void*),void *arg) {  
     struct uthread *ut = NULL;
-    uthread_create(&ut,start_rtn,arg);
+    int res = uthread_create(&ut,start_rtn,arg);
     *tidp = (unsigned long)ut;
-    return 1;
+    return res;
 }
 
 int pthread_join(pthread_t thread, void **retval) {
     // printf("in join \n");
     struct uthread* ut = (struct uthread*)thread;
-    uthread_join(ut,NULL);
-    return 0;
+    int res = uthread_join(ut, retval);    // 暂时不使用retval参数
+    return res;
 }
 
 pthread_t pthread_self(void) {
@@ -29,7 +29,13 @@ pthread_t pthread_self(void) {
 }
 
 void pthread_exit(void *retval) {
-    uthread_exit(NULL);
+    uthread_exit(retval);
+}
+
+int pthread_detach(pthread_t thread) {
+    struct uthread *ut = (struct uthread *)thread;
+    int res = uthread_detach(ut);
+    return res;
 }
 
 int socket(int domain, int type, int protocol) {

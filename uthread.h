@@ -15,6 +15,7 @@ ssize_t pthread_disk_write(int fd, void *buf, size_t nbytes);
 int uthread_join(struct uthread *ut, void **retval);
 unsigned long uthread_self(void);
 void uthread_exit(void *retval);
+int uthread_detach(struct uthread *ut);
 
 // 开放给socket的接口
 int uthread_socket(int domain, int type, int protocol);
