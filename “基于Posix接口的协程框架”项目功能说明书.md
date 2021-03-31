@@ -77,7 +77,7 @@
 
 首先，会初始化sched、p、ut三大核心组件相关的的全局数据结构，包括存储组件信息的全局数组、用于记录组件使用情况和后续分配的数据结构位图、创建调度器需要的栈空间；此外，还要为全局数据的访问初始化互斥锁。然后，为当前线程创建核心调度循环的上下文，并为当前线程绑定一个可用的sched与p。接着，创建时间轮监控线程，用于运行时系统的抢占机制——至此，运行时的大部分初始化工作就完成了。随后，系统会把main函数这个线程的执行流封装进一个uthread中，让main函数成为一个普通的协程。系统把main协程放入p的就绪队列，随即进行一次_switch调用切换到调度器。调度器开始执行并发现自己绑定的p中已经存在任务，马上从任务队列中取出main协程执行。此后，线程的执行流就遵循“协程-调度器-协程”的模式，整个系统的调度便以协程为粒度进行了。运行时系统启动的流程图如下：
 <div align = center>
-    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(2).png" width: 100px; height : 100px style="zoom:50%;" />
+    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(2).png" width:100px height:100px style="zoom:50%;" />
 </div>
 
 
