@@ -15,23 +15,23 @@
 6. 通过将任务集合会转移到新的线程上，使得阻塞系统调用不会干扰其它协程的执行
 7. 基于时间轮定时器实现10ms级的抢占
 
-<div align = center>
-    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/20210331212521.png" style="width:200px; height: 150px" />
-</div>
-
 #### 软件架构
 
-我们主要参考Golang的GMP协程调度模型进行项目代码的架构设计，架构示意图如下：
+##### GMP架构
+我们主要参考Golang的GMP模型进行项目代码的架构设计，架构示意图如下：
 
-<div align = center>
-    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image.png" style="width:80%; height:80%" />
-</div>
+![avatar](https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image.png)
 
 架构涉及三个核心组件，图中KSE为内核调度实体，即内核线程。三个组件简要说明如下：
 - ut：协程实体，是运行时系统调度的基本单位；因协程在某种意义上也可以被理解为“用户线程”，所以此处是取user thread之意，在编码时协程的结构体被命名为uthread。  
 - p：对单个线程上所有协程任务的封装，包括就绪任务、阻塞任务、定时的休眠任务。  
 - sched：协程的调度器，一个内核线程与一个调度器一一对应。  
 
+##### 接口层次设计
+![](https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/20210331212521.png)
+
+##### 调度逻辑和协程状态流转
+![](https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/20210331232701.png)
 
 #### 使用说明
 
