@@ -16,7 +16,7 @@
 7. 基于时间轮定时器实现10ms级的抢占
 
 <div align = center>
-    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/20210331212521.png" style="width:80%; height:80%" />
+    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/20210331212521.png" style="width:200px; height: 150px" />
 </div>
 
 #### 软件架构
