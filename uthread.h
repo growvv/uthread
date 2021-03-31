@@ -5,6 +5,9 @@
 #include <sys/socket.h>
 #include <stdint.h>
 
+#include "timer.h"
+#include "myhook.h"
+
 struct uthread *ut;
 
 int uthread_create(struct uthread **new_ut, void *func, void *arg);

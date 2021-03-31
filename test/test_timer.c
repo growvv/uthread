@@ -1,6 +1,7 @@
 #include <stdio.h>
-#include "string.h"
-#include "timer.h"
+#include <string.h>
+#include <unistd.h>
+
 #include "uthread.h"
 #include <pthread.h>
 // void handler_alias(){
@@ -12,7 +13,8 @@
 //     _uthread_yield();
 // }
 
-void a (void *x) {
+void *
+a (void *x) {
     for (;;){
         printf("a is running\n");
         sleep(1000);
@@ -20,7 +22,8 @@ void a (void *x) {
     } 
 }
 
-void b (void *x) {
+void *
+b (void *x) {
     for (;;) {
         printf("b is running\n");
         sleep(1000);
@@ -28,7 +31,8 @@ void b (void *x) {
     }
 }
 
-void * c (void *x) {
+void * 
+c (void *x) {
     printf("c is running\n");
     // for (;;){
     //     sleep(1000);

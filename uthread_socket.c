@@ -52,7 +52,7 @@ int uthread_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
 int uthread_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
     int res;
     struct uthread *ut = _sched_get()->cur_uthread;
-    int (*sys_connect)(int sockfd, struct sockaddr *addr, socklen_t *addrlen) = dlsym(RTLD_NEXT, "connect");
+    int (*sys_connect)(int sockfd, const struct sockaddr *addr, socklen_t addrlen) = dlsym(RTLD_NEXT, "connect");
     while (1) {
         res = sys_connect(sockfd, addr, addrlen);
         printf("connect: %d\n", res);

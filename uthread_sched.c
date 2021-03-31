@@ -376,7 +376,8 @@ _runtime_init() {
 void *
 _sched_create_another(void *new_sched) {
     struct sched *sched = (struct sched *)new_sched;
-    sched->p->tid = pthread_self();
+    long  (*sys_pthread_self)() = dlsym(RTLD_NEXT, "pthread_self");
+    sched->p->tid = sys_pthread_self();
     assert(pthread_setspecific(uthread_sched_key, sched) == 0);
     _sched_run();
 }

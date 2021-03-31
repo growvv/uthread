@@ -14,12 +14,12 @@ static struct timer_wheel timer;
 void* create_timewheel(void* arg){
     printf("create timewheel successfully\n");
     timer.current = 0;
-    printf("tick里的槽位情况: ");
-    int i = 0;
-    for (i = 0; i < 10; ++i) {
-        if (timer.slot[i])
-            printf("%ld: ", timer.slot[i]->ut->p->tid);
-    }
+    // printf("tick里的槽位情况: ");
+    // int i = 0;
+    // for (i = 0; i < 10; ++i) {
+    //     if (timer.slot[i])
+    //         printf("%ld: ", timer.slot[i]->ut->p->tid);
+    // }
     // memset(timer.slot, 0, sizeof(timer.slot));
 
     signal(SIGALRM, tick);
@@ -35,7 +35,7 @@ void* create_timewheel(void* arg){
     for(;;){
         sleep(1000);
     }       
-    printf("thread exit\n");
+    // printf("thread exit\n");
 }
 
 // pthread_t global_pid;
@@ -81,7 +81,7 @@ void tick(int signo)
             *cur = curr->next;   
             free(curr);
             curr = NULL;
-            printf("free掉了\n");
+            // printf("free掉了\n");
         }
     }
     // timer.slot[timer.current] = NULL;

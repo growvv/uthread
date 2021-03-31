@@ -363,14 +363,39 @@ uthread_io_read(int fd, void *buf, size_t nbytes) {
     // }
     // /* 演示end */
 
-    ssize_t res = read(fd, buf, nbytes);
+    ssize_t (*myread)(int fd, void *buf, size_t nbytes) = dlsym(RTLD_NEXT, "read");
+    ssize_t res = myread(fd, buf, nbytes);
+    // printf("hereeeeeeeeeeeeeeeeeee\n");
     return res;
 }
 
 // 
 ssize_t 
 uthread_io_write(int fd, void *buf, size_t nbytes) {
-    return write(fd, buf, nbytes);
+    struct sched *cur_sched = NULL, *new_sched = NULL;
+    pthread_t t;
+
+    cur_sched = _sched_get();
+    cur_sched->cur_uthread->is_wating_yield_signal = 0;
+
+    if (cur_sched->p && !TAILQ_EMPTY(&cur_sched->p->ready)) {
+        new_sched = TAILQ_FIRST(&ptr_global->sched_idle);
+        TAILQ_REMOVE(&ptr_global->sched_idle, new_sched, ready_next);
+        new_sched->p = cur_sched->p;
+        new_sched->p->sched = new_sched;    // 修改p使得uthread的sched改变（ut->p->sched来获取）
+        cur_sched->p = NULL;
+
+        /* 为新调度器创建一个线程 */
+        printf("creating a new thread for blocked io...\n");
+        int (*mypthread_create)(pthread_t *tidp,const pthread_attr_t *attr,void *(*start_rtn)(void*),void *arg) = dlsym(RTLD_NEXT, "pthread_create");
+        assert(mypthread_create(&t, NULL, _sched_create_another, new_sched) == 0);
+        // assert(pthread_create(&t, NULL, _sched_create_another, new_sched) == 0);
+        printf("created successively!\n");
+    }
+    
+    ssize_t (*mywrite)(int fd, void *buf, size_t nbytes) = dlsym(RTLD_NEXT, "write");
+    ssize_t res = mywrite(fd, buf, nbytes);
+    return res;
 }
 
 unsigned long 
@@ -378,7 +403,7 @@ uthread_self(void) {
     struct sched *sched = _sched_get();
     if (!sched)
         return -1;
-    return sched->cur_uthread;
+    return (unsigned long)sched->cur_uthread;
 }
 
 // 协程终止后，会释放掉协程栈；

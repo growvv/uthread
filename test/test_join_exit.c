@@ -6,14 +6,22 @@
 
 #include "uthread.h"
 #include <pthread.h>
-#include "myhook.h"
+// #include "myhook.h"
 void *a () {
     printf("a-ut id: %ld .\n", pthread_self());
     printf("a is running.\n");
     pthread_exit(NULL);
-    printf("a about to sleep for 2s.\n");
+    // printf("a about to sleep for 2s.\n");
+    // sleep(2);
+    // printf("a is exiting\n");   
+}
+
+void *b () {
+    printf("b-ut id: %ld .\n", pthread_self());
+    printf("b is running.\n");
+    printf("b about to sleep for 2s.\n");
     sleep(2);
-    printf("a is exiting\n");
+    printf("b is exiting\n");
     
 }
 
@@ -22,11 +30,17 @@ int main() {
     enable_hook();
     
     pthread_t p;
-    pthread_create(&p, NULL, a,NULL);
+    pthread_create(&p, NULL, a, NULL);
+    pthread_t p2;
+    pthread_create(&p2, NULL, b, NULL);
     printf("main-ut id: %ld .\n", pthread_self());
 
     printf("main about to join a.\n");
     pthread_join(p, NULL);
+    printf("main waken up.\n");
+
+    printf("main about to join b.\n");
+    pthread_join(p2, NULL);
     printf("main waken up.\n");
 
     printf("main is existing.\n\n");

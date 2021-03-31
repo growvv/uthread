@@ -1,17 +1,18 @@
 #include <stdio.h>
 
 #include "uthread.h"
-#include "myhook.h"
+// #include "myhook.h"
 #include <pthread.h>
 
-void *a (void *x) {
-    for (int i = 0; i < 100; i = i + 2) {
+void *
+a (void *x) {
+    for (int i = 1; i < 100; i = i + 2) {
         printf("thread a: %d\n", i);
         _uthread_yield();
     }
 }
 
-void 
+void * 
 b (void *x) {
     for (int i = 1; i < 100; i = i + 2) {
         printf("thread b: %d\n", i);
@@ -19,7 +20,7 @@ b (void *x) {
     }
 }
 
-void 
+void * 
 c (void *x) {
     for (int i = 1; i < 100; i = i + 2) {
         printf("thread c: %d\n", i);

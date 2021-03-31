@@ -22,7 +22,7 @@ int pthread_create(pthread_t *tidp,const pthread_attr_t *attr,void *(*start_rtn)
 
 int pthread_join(pthread_t thread, void **retval) {
     printf("in join \n");
-    struct uthread* ut = thread;
+    struct uthread* ut = (struct uthread*)thread;
     uthread_join(ut,NULL);
     // int (*sys_pthread_join)(pthread_t thread, void **retval) = dlsym(RTLD_NEXT, "pthread_join");
     // sys_pthread_join(thread,retval);

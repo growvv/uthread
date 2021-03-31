@@ -1,2 +1,1 @@
-
 int enable_hook();

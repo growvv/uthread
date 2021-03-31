@@ -10,7 +10,7 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 #include "uthread.h"
-#include "myhook.h"
+// #include "myhook.h"
 // #include <string.h>
 
 int client()
