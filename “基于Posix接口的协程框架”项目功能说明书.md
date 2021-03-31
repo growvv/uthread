@@ -35,7 +35,10 @@
 ### 2.1 核心架构
 
 我们主要参考Golang的GMP协程调度模型进行项目代码的架构设计，架构示意图如下：
-![avatar](https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image.png)
+<div align = "center" >
+    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image.png" width=50% height=80% style="zoom:10%" />
+</div>
+
 
 架构涉及三个核心组件，图中KSE为内核调度实体，即内核线程。三个组件简要说明如下：
 - ut：协程实体，是运行时系统调度的基本单位；因协程在某种意义上也可以被理解为“用户线程”，所以此处是取user thread之意，在编码时协程的结构体被命名为uthread。  
@@ -51,7 +54,7 @@
 每一个协程实体在它生命周期中的不同阶段会具有不同的状态，协程进行状态转移的主要流程如下图所示：  
 
 <div align = "center" >
-    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(1).png" width=10% height=10% style="zoom:10%;" />
+    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(1).png" width=50% height=80% style="zoom:10%;" />
 </div>
 
 
