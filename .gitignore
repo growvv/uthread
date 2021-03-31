@@ -1,0 +1,11 @@
+#忽略所有文件和目录
+*
+#增加指定目录和下面所有目录
+!/test/
+#增加指定扩展名文件和MAKEFILE文件
+!*.c
+!*.h
+!makefile
+#当前目录下需要提交的文件                                                                                                                                                  
+!README.md
+!.gitignore
