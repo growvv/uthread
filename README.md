@@ -21,7 +21,7 @@
 我们主要参考Golang的GMP模型进行项目代码的架构设计，架构示意图如下：
 
 <div align = center>
-    < img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image.png" width:50%; height:50% />
+    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image.png" width:50%; height:50% />
 </div>
 
 架构涉及三个核心组件，图中KSE为内核调度实体，即内核线程。三个组件简要说明如下：
@@ -31,12 +31,12 @@
 
 ##### 接口层次设计
 <div align = center>
-    < img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/20210331212521.png" width:50%; height:50% />
+    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/20210331212521.png" width:50%; height:50% />
 </div>
 
 ##### 调度逻辑和协程状态流转
 <div align = center>
-    < img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/20210331232701.png" width:50%; height:50% />
+    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/20210331232701.png" width:50%; height:50% />
 </div>
 
 #### 使用说明
