@@ -222,7 +222,7 @@ int pthread_join(pthread_t thread, void **retval);
 **pthread_exit**
 
 ```C
-void pthread_exit(void *retval);
+void pthread_exit(void *retval);
 ```
 退出协程。若retval不为空，会向连接到自己的协程返回一些信息，这个信息不应该位于局部存储空间中。
 
@@ -246,7 +246,7 @@ pthread_t pthread_self(void);
 **pthread_detach**
 
 ```C
-int pthread_detach(pthread_t thread); 
+int pthread_detach(pthread_t thread);
 ```
 将协程标记为分离状态。被detach的协程不允许被其它协程连接，退出后可以直接由运行时回收该协程所占有的全部资源。
 
