@@ -77,7 +77,7 @@
 
 首先，会初始化sched、p、ut三大核心组件相关的的全局数据结构，包括存储组件信息的全局数组、用于记录组件使用情况和后续分配的数据结构位图、创建调度器需要的栈空间；此外，还要为全局数据的访问初始化互斥锁。然后，为当前线程创建核心调度循环的上下文，并为当前线程绑定一个可用的sched与p。接着，创建时间轮监控线程，用于运行时系统的抢占机制——至此，运行时的大部分初始化工作就完成了。随后，系统会把main函数这个线程的执行流封装进一个uthread中，让main函数成为一个普通的协程。系统把main协程放入p的就绪队列，随即进行一次_switch调用切换到调度器。调度器开始执行并发现自己绑定的p中已经存在任务，马上从任务队列中取出main协程执行。此后，线程的执行流就遵循“协程-调度器-协程”的模式，整个系统的调度便以协程为粒度进行了。运行时系统启动的流程图如下：
 <div align = center>
-    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(2).png" style="zoom:50%;" />
+    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(2).png" width=60% height=70% style="zoom:50%;" />
 </div>
 
 
@@ -85,7 +85,7 @@
 
 每一个线程都会绑定一个调度器，绑定的实质是为线程绑定一个用于执行核心调度循环的_sched_run函数，以及为调度器的执行提供一个sched结构体。运行时初始化完毕之后，线程就始终运行在调度循环之中，执行流会在调度器和协程之间反复切换。从调度器的角度来看，调度循环主要分为四个环节：检查是否有到达唤醒时间的处于睡眠状态的任务、执行就绪队列中的任务、为阻塞在socket I/O上的协程监听相关的事件、处理监听到的就绪事件。核心调度循环的流程图如下：
 <div align = center>
-    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(3).png" style="zoom:50%;" />
+    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(3).png" width=60% height=70% style="zoom:50%;" />
 </div>
 
 
@@ -105,7 +105,7 @@
 
 当就绪事件发生时，epoll_wait会立即返回，并将就绪事件放在sched->p->eventlist中。对于eventlist中的每个事件，我们通过FD_KEY(fd，e)作为key，将它从waitting tree上移除；同时，如果它是UT_ST_SLEEPING状态，将它也从sleeping tree上移除，这两棵tree使用的数据结构都是红黑树，插入、查找和删除都具有O(logn)的高效性能。除此之外，对于每个事件，我们还需要从poll_fd中取消监听，并修改对应的状态。此时，就调用_uthread_resume(ut) 恢复执行该ut了。
 <div align = center>
-    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(4).png" style="zoom:25%;" />
+    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(4).png" width=25% height=25% style="zoom:25%;" />
 </div>
 
 
@@ -116,7 +116,7 @@
 - 如果是成功返回，例如连接成功、send n bytes、recv n bytes等，直接将该结果返回，供上层使用；
 - 如果返回值是异常值，则进行出错处理；
 <div align = center>
-    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(5).png" style="zoom:23%;" />
+    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(5).png" width=30% height=30% style="zoom:23%;" />
 </div>
 
 
@@ -126,7 +126,7 @@
 
 对于socket I/O，我们已经通过将socket的文件描述符修改为非阻塞，然后在描述符未就绪时通过调用框架内部用于“阻塞”协程的函数实现协程级别的阻塞。事实上，对于读取终端（shell交互），也可以使用这样的方式。然而，对于读磁盘这样的特殊情形，文件描述符不会像socket I/O那样出现未就绪而标记错误号为EAGAIN的情况。若操作系统发现内核页缓冲区没有预读入的数据，则会将发起请求的线程阻塞，然后将数据从磁盘读取到内核页缓冲。也就是说，我们无法避免因为磁盘I/O而出现长时间的线程阻塞。对于这样几乎确定会长时间阻塞线程的系统调用，我们将线程上的p任务集合整体转移到其它的线程上，从而避免了同一线程上的其他任务无法执行。p在线程之间的转移示意图如下：
 <div align = center>
-    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(6).png" style="zoom:85%;" />
+    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(6).png" width=60% height=70% style="zoom:85%;" />
 </div>
 
 
