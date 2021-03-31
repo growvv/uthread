@@ -36,7 +36,7 @@
 
 我们主要参考Golang的GMP协程调度模型进行项目代码的架构设计，架构示意图如下：
 <div align = "center" >
-    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image.png" width=50% height=80% style="zoom:10%" />
+    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image.png" width=60% height=70% style="zoom:10%" />
 </div>
 
 
