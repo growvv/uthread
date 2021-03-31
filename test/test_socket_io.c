@@ -8,10 +8,8 @@
 #include <errno.h>
 #include <string.h>
 #include <arpa/inet.h>
-#include <pthread.h>
+
 #include "uthread.h"
-// #include "myhook.h"
-// #include <string.h>
 
 int client()
 {
@@ -31,7 +29,7 @@ int client()
 
     serverAddr.sin_family = AF_INET;
     serverAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
-    serverAddr.sin_port = htons(54500);//默认以8080端口连接
+    serverAddr.sin_port = htons(54500);     //默认以8080端口连接
 
     /* 和服务器端建立连接 */
     nRet = connect(nFd,(struct sockaddr*)&serverAddr,sizeof(serverAddr));
@@ -133,18 +131,13 @@ void* myclient(void* data)
     return NULL;
 }
 
-
 int main() {  
     enable_hook();
-    pthread_t server_p,client_p;
+
+    pthread_t server_p, client_p;
     pthread_create(&server_p,NULL, myserver, NULL);
     sleep(1);
     pthread_create(&client_p,NULL, myclient, NULL);
-    
-    // for (int t = 0; t < 2; t++) {
-    //     uthread_join(pids[t], NULL);
-    // }
-    uthread_main_end();
 
-    return 0;
+    main_end();
 }

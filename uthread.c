@@ -88,8 +88,9 @@ static pthread_once_t key_once = PTHREAD_ONCE_INIT;     // 与该变量绑定的
 //     free((data);     
 // }
 
-void handler(){
-    printf("收到了指示执行yield的信号\n");
+void 
+handler(){
+    // printf("收到了指示执行yield的信号\n");
 
     // 执行信号处理函数期间会自动屏蔽该信号，而yield出去之后handler并没有执行结束
     // 因此，这里需要解除对SIGUSR1的屏蔽，
@@ -201,8 +202,6 @@ uthread_create(struct uthread **new_ut, void *func, void *arg) {
     
     TAILQ_INSERT_TAIL(&sched->p->ready, ut, ready_next);
 
-//    add_timer(10,ut);
-
     return 0;
 }
 
@@ -260,6 +259,7 @@ _uthread_free_main(struct uthread *ut) {
     assert(pthread_mutex_unlock(&ptr_global->mutex) == 0);
 }
 
+// 用于sleeping树，根据唤醒时刻排序
 inline int
 _uthread_sleep_cmp(struct uthread *u1, struct uthread *u2)
 {
@@ -270,9 +270,7 @@ _uthread_sleep_cmp(struct uthread *u1, struct uthread *u2)
     return 1;
 }
 
-// 生成uthread_rb_sleep的红黑树操作
-// RB_GENERATE(uthread_rb_sleep, uthread, sleep_node, _uthread_sleep_cmp); // 生成 sleep uthread 的红黑树操作函数
-
+// 用于waiting树，根据(fd, e)构造key
 inline int
 _uthread_wait_cmp(struct uthread *ut1, struct uthread *ut2) {
     if (ut1->fd_wait < ut2->fd_wait)
@@ -282,9 +280,6 @@ _uthread_wait_cmp(struct uthread *ut1, struct uthread *ut2) {
     return 1;
 }
 
-// RB_GENERATE(uthread_rb_wait, uthread, wait_node, _uthread_wait_cmp);
-
-
 int
 _uthread_resume(struct uthread *ut) {
     struct sched *sched = _sched_get();
@@ -293,8 +288,8 @@ _uthread_resume(struct uthread *ut) {
         _uthread_init(ut);
 
     sched->cur_uthread = ut;
-    printf("current ut:%ld\n",ut->id);
-    printf("current pid:%ld\n",pthread_self());
+    // printf("current ut:%ld\n",ut->id);
+    // printf("current pid:%ld\n",pthread_self());
 
     ut->is_wating_yield_signal = 1;
     add_timer(1,ut);
@@ -326,15 +321,15 @@ _uthread_resume(struct uthread *ut) {
  * 通过注册UT_ST_EXITED位，调度器会删除main协程  
  */
 void 
-uthread_main_end() {
+main_end() {
     struct uthread *ut_main = _sched_get()->cur_uthread;
     ut_main->status |= BIT(UT_ST_EXITED);   // 这样调度器就会删掉main协程了
     _uthread_yield();
 }
 
-// 【先不区分读的时候会不会阻塞，只把p解绑，从全局中取一个M出来与p绑定】
+// 磁盘IO无法避免阻塞，需要把p解绑，从全局中取一个sched出来与p绑定
 ssize_t 
-uthread_io_read(int fd, void *buf, size_t nbytes) {
+pthread_disk_read(int fd, void *buf, size_t nbytes) {
     struct sched *cur_sched = NULL, *new_sched = NULL;
     pthread_t t;
 
@@ -350,28 +345,21 @@ uthread_io_read(int fd, void *buf, size_t nbytes) {
 
 
         /* 为新调度器创建一个线程 */
-        printf("creating a new thread for blocked io...\n");
+        // printf("creating a new thread for blocked io...\n");
         int (*mypthread_create)(pthread_t *tidp,const pthread_attr_t *attr,void *(*start_rtn)(void*),void *arg) = dlsym(RTLD_NEXT, "pthread_create");
         assert(mypthread_create(&t, NULL, _sched_create_another, new_sched) == 0);
         // assert(pthread_create(&t, NULL, _sched_create_another, new_sched) == 0);
-        printf("created successively!\n");
+        // printf("created successively!\n");
     }
-    
-    // /* 以下单纯为了演示多线程并行的效果 */
-    // for (int k = 0; k < 10000000; ++k) {
-    //     printf("uthread a: k is %d\n", k);
-    // }
-    // /* 演示end */
 
     ssize_t (*myread)(int fd, void *buf, size_t nbytes) = dlsym(RTLD_NEXT, "read");
     ssize_t res = myread(fd, buf, nbytes);
-    // printf("hereeeeeeeeeeeeeeeeeee\n");
     return res;
 }
 
 // 
 ssize_t 
-uthread_io_write(int fd, void *buf, size_t nbytes) {
+pthread_disk_write(int fd, void *buf, size_t nbytes) {
     struct sched *cur_sched = NULL, *new_sched = NULL;
     pthread_t t;
 
@@ -386,11 +374,11 @@ uthread_io_write(int fd, void *buf, size_t nbytes) {
         cur_sched->p = NULL;
 
         /* 为新调度器创建一个线程 */
-        printf("creating a new thread for blocked io...\n");
+        // printf("creating a new thread for blocked io...\n");
         int (*mypthread_create)(pthread_t *tidp,const pthread_attr_t *attr,void *(*start_rtn)(void*),void *arg) = dlsym(RTLD_NEXT, "pthread_create");
         assert(mypthread_create(&t, NULL, _sched_create_another, new_sched) == 0);
         // assert(pthread_create(&t, NULL, _sched_create_another, new_sched) == 0);
-        printf("created successively!\n");
+        // printf("created successively!\n");
     }
     
     ssize_t (*mywrite)(int fd, void *buf, size_t nbytes) = dlsym(RTLD_NEXT, "write");

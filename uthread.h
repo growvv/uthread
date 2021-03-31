@@ -6,13 +6,12 @@
 #include <stdint.h>
 
 #include "timer.h"
-#include "myhook.h"
 
 struct uthread *ut;
 
 int uthread_create(struct uthread **new_ut, void *func, void *arg);
-ssize_t uthread_io_read(int fd, void *buf, size_t nbytes);
-ssize_t uthread_io_write(int fd, void *buf, size_t nbytes);
+ssize_t pthread_disk_read(int fd, void *buf, size_t nbytes);
+ssize_t pthread_disk_write(int fd, void *buf, size_t nbytes);
 int uthread_join(struct uthread *ut, void **retval);
 unsigned long uthread_self(void);
 void uthread_exit(void *retval);
@@ -35,10 +34,10 @@ ssize_t uthread_sendmsg(int fd, const struct msghdr *message, int flags);
 ssize_t uthread_sendto(int fd, const void *buf, size_t length, int flags, const struct sockaddr *dest_addr, socklen_t dest_len);
 ssize_t uthread_writev(int fd, struct iovec *iov, int iovcnt);
 
+int enable_hook();
+void main_end();
 
 // 下面的接口临时开放给用户
 void _uthread_yield();
-void uthread_main_end();
-
 
 #endif

@@ -10,7 +10,7 @@
 
 #define TIME_WHEEL_SIZE 10
 
-struct timer_node{
+struct timer_node {
     struct timer_node *next;
     int rotation;
     struct uthread *ut;
@@ -24,7 +24,5 @@ struct timer_wheel {
 void* create_timewheel(void* arg);
 void tick(int signo);
 void add_timer(int len, struct uthread *ut);
-
-extern pthread_t global_pid;
 
 #endif

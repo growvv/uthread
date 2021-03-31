@@ -1,19 +1,16 @@
 
-// myhook.c
+/* 对协程管理和socket I/O接口的hook，接口与posix线程和socket库保持一致。
+   用户可以保持自己的编程习惯，对协程无感知。
+ */
+
 #include <stdlib.h>
-// #include <dlfcn.h>
 #include <stdio.h>
 #include <pthread.h>
-#include "myhook.h"
-#include "uthread.h"
 #include <sys/socket.h>
 
+#include "uthread.h"
 
-
-int pthread_create(pthread_t *tidp,const pthread_attr_t *attr,void *(*start_rtn)(void*),void *arg) {
-    
-    // int (*mypthread_create)(pthread_t *tidp,const pthread_attr_t *attr,void *(*start_rtn)(void*),void *arg) = dlsym(RTLD_NEXT, "pthread_create");
-    // printf("in uthread create!\n");
+int pthread_create(pthread_t *tidp,const pthread_attr_t *attr,void *(*start_rtn)(void*),void *arg) {  
     struct uthread *ut = NULL;
     uthread_create(&ut,start_rtn,arg);
     *tidp = (unsigned long)ut;
@@ -21,24 +18,19 @@ int pthread_create(pthread_t *tidp,const pthread_attr_t *attr,void *(*start_rtn)
 }
 
 int pthread_join(pthread_t thread, void **retval) {
-    printf("in join \n");
+    // printf("in join \n");
     struct uthread* ut = (struct uthread*)thread;
     uthread_join(ut,NULL);
-    // int (*sys_pthread_join)(pthread_t thread, void **retval) = dlsym(RTLD_NEXT, "pthread_join");
-    // sys_pthread_join(thread,retval);
     return 0;
 }
-
 
 pthread_t pthread_self(void) {
     return uthread_self();
 }
 
-
 void pthread_exit(void *retval) {
     uthread_exit(NULL);
 }
-
 
 int socket(int domain, int type, int protocol) {
     int ret = uthread_socket(domain,type,protocol);
@@ -50,19 +42,15 @@ int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
     return ret;
 }
 
-
 int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
     int ret = uthread_accept(sockfd,addr,addrlen);
     return ret;
 }
 
-
-
 ssize_t	 read(int fd, void *buf, size_t length) {
     ssize_t ret = uthread_read(fd, buf, length);
     return ret;
 }
-
 
 ssize_t write(int fd, const void *buf, size_t length) {
     ssize_t res = uthread_write(fd,buf,length);
@@ -97,8 +85,6 @@ ssize_t sendto(int fd, const void *buf, size_t length, int flags, const struct s
 ssize_t writev(int fd, struct iovec *iov, int iovcnt){
     return uthread_writev(fd,iov,iovcnt);
 }
-
-
 
 
 int enable_hook() {

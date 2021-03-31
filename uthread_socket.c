@@ -3,15 +3,14 @@
 #include <fcntl.h>
 #include <assert.h>
 #include <stdio.h>
-#include <unistd.h>  // read
+#include <unistd.h>     // read
 #include <dlfcn.h>
-#include <sys/uio.h>  //writev
+#include <sys/uio.h>    //writev
+#include "uthread_inner.h"
 
 #define FLAG | MSG_NOSIGNAL
 
-#include "uthread_inner.h"
-
-int  uthread_socket(int domain, int type, int protocol) {
+int uthread_socket(int domain, int type, int protocol) {
     int sock_fd;
     int (*sys_socket)(int domain, int type, int protocol) = dlsym(RTLD_NEXT, "socket");
     assert((sock_fd = sys_socket(domain, type, protocol)) != -1);
@@ -20,17 +19,16 @@ int  uthread_socket(int domain, int type, int protocol) {
     return sock_fd;
 }
 
-
 // accept永不超时
 int uthread_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
     int res;
     struct uthread *ut = _sched_get()->cur_uthread;
     int (*sys_accept)(int sockfd, struct sockaddr *addr, socklen_t *addrlen) = dlsym(RTLD_NEXT, "accept");
-    printf("uthread_accept id: %d\n", (int)ut->id);
+    // printf("uthread_accept id: %d\n", (int)ut->id);
 
     while (1) {
         res = sys_accept(sockfd, addr, addrlen);
-        printf("uthraed_accept res: %d\n", res);
+        // printf("uthread_accept res: %d\n", res);
         if (res == -1) {
             // 若现在没有收到连接、若无法继续创建一个新的fd，“阻塞”协程，并注册一个读事件
             if (errno == EAGAIN || errno == ENFILE || errno == EMFILE) {
@@ -55,10 +53,10 @@ int uthread_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen) 
     int (*sys_connect)(int sockfd, const struct sockaddr *addr, socklen_t addrlen) = dlsym(RTLD_NEXT, "connect");
     while (1) {
         res = sys_connect(sockfd, addr, addrlen);
-        printf("connect: %d\n", res);
+        // printf("connect: %d\n", res);
         if (res == -1) {
             if (errno == EAGAIN || errno == EINPROGRESS) {
-                printf("error: %d\n", errno);
+                // printf("error: %d\n", errno);
                 _register_event(ut, sockfd, UT_EVENT_WR, 0); // 要设置超时时间 
                 if (ut->status & BIT(UT_ST_EXPIRED)) {  // 如果connect超时
                     errno = ETIMEDOUT;
@@ -81,144 +79,136 @@ ssize_t uthread_read(int fd, void *buf, size_t length) {
     int (*sys_read)(int fd, void *buf, size_t length) = dlsym(RTLD_NEXT, "read");
     while (1) {     
         // printf("非阻塞读\n");
-        if (ut->status & BIT(UT_ST_FDEOF))                   \
-            return (-1);                                    \
+        if (ut->status & BIT(UT_ST_FDEOF))                   
+            return (-1);                                    
         assert(fcntl(fd, F_SETFL, O_NONBLOCK) != -1);
         ret = sys_read(fd, buf, length);                 
         // printf("ret: %d\n", (int)ret);
         if (ret == -1 && errno != EAGAIN) {
-            return (-1);                                    \
+            return (-1);                                    
         }
-        if ((ret == -1 && errno == EAGAIN)) {               \
+        if ((ret == -1 && errno == EAGAIN)) {               
             // printf("怎么才能触发您啊？？\n");
-            _register_event(ut, fd, UT_EVENT_RD, 0);  \
-            if (ut->status & BIT(UT_ST_EXPIRED))             \
-                return (-2);                                \
-        }                                                   \
-        if (ret >= 0)                                       \
-            return (ret);                                   \
-    }                                                       \
+            _register_event(ut, fd, UT_EVENT_RD, 1000);  
+            if (ut->status & BIT(UT_ST_EXPIRED))             
+                return (-2);                                
+        }                                                   
+        if (ret >= 0)                                       
+            return (ret);                                   
+    }                                                       
 }  
+
 ssize_t uthread_recv(int fd, void *buf, size_t length, int flags) {
     ssize_t ret = 0;                                       
     struct uthread *ut = _sched_get()->cur_uthread;
     while (1) {     
-        // printf("非阻塞读\n");
-        if (ut->status & BIT(UT_ST_FDEOF))                   \
-            return (-1);                                    \
+        if (ut->status & BIT(UT_ST_FDEOF))                   
+            return (-1);                                    
         assert(fcntl(fd, F_SETFL, O_NONBLOCK) != -1);
         ret =  recv(fd, buf, length, flags FLAG);                
-        // printf("ret: %d\n", (int)ret);
         if (ret == -1 && errno != EAGAIN) {
-            return (-1);                                    \
+            return (-1);                                    
         }
-        if ((ret == -1 && errno == EAGAIN)) {               \
-            // printf("怎么才能触发您啊？？\n");
-            _register_event(ut, fd, UT_EVENT_RD, 0);  \
-            if (ut->status & BIT(UT_ST_EXPIRED))             \
-                return (-2);                                \
-        }                                                   \
-        if (ret >= 0)                                       \
-            return (ret);                                   \
-    }                                                       \
+        if ((ret == -1 && errno == EAGAIN)) {               
+            _register_event(ut, fd, UT_EVENT_RD, 0);  
+            if (ut->status & BIT(UT_ST_EXPIRED))             
+                return (-2);                                
+        }                                                   
+        if (ret >= 0)                                       
+            return (ret);                                 
+    }                                                     
 }  
 ssize_t uthread_recvmsg(int fd, struct msghdr *message, int flags) {
     ssize_t ret = 0;                                       
     struct uthread *ut = _sched_get()->cur_uthread;
     while (1) {     
-        // printf("非阻塞读\n");
-        if (ut->status & BIT(UT_ST_FDEOF))                   \
-            return (-1);                                    \
+        if (ut->status & BIT(UT_ST_FDEOF))                   
+            return (-1);                                    
         assert(fcntl(fd, F_SETFL, O_NONBLOCK) != -1);
         ret =  recvmsg(fd, message, flags FLAG);            
-        // printf("ret: %d\n", (int)ret);
         if (ret == -1 && errno != EAGAIN) {
-            return (-1);                                    \
+            return (-1);                                    
         }
-        if ((ret == -1 && errno == EAGAIN)) {               \
-            // printf("怎么才能触发您啊？？\n");
-            _register_event(ut, fd, UT_EVENT_RD, 0);  \
-            if (ut->status & BIT(UT_ST_EXPIRED))             \
-                return (-2);                                \
-        }                                                   \
-        if (ret >= 0)                                       \
-            return (ret);                                   \
-    }                                                       \
+        if ((ret == -1 && errno == EAGAIN)) {               
+            _register_event(ut, fd, UT_EVENT_RD, 0);  
+            if (ut->status & BIT(UT_ST_EXPIRED))             
+                return (-2);                                
+        }                                                   
+        if (ret >= 0)                                       
+            return (ret);                                   
+    }                                                       
 }  
 ssize_t uthread_recvfrom(int fd, void *buf, size_t length, int flags,
         struct sockaddr *address, socklen_t *address_len) {
     ssize_t ret = 0;                                       
     struct uthread *ut = _sched_get()->cur_uthread;
     while (1) {     
-        // printf("非阻塞读\n");
-        if (ut->status & BIT(UT_ST_FDEOF))                   \
-            return (-1);                                    \
+        if (ut->status & BIT(UT_ST_FDEOF))                   
+            return (-1);                                    
         assert(fcntl(fd, F_SETFL, O_NONBLOCK) != -1);
         ret =  recvfrom(fd, buf, length, flags FLAG, address, address_len);           
-        // printf("ret: %d\n", (int)ret);
         if (ret == -1 && errno != EAGAIN) {
-            return (-1);                                    \
+            return (-1);                                    
         }
-        if ((ret == -1 && errno == EAGAIN)) {               \
-            // printf("怎么才能触发您啊？？\n");
-            _register_event(ut, fd, UT_EVENT_RD, 0);  \
-            if (ut->status & BIT(UT_ST_EXPIRED))             \
-                return (-2);                                \
-        }                                                   \
-        if (ret >= 0)                                       \
-            return (ret);                                   \
-    }                                                       \
+        if ((ret == -1 && errno == EAGAIN)) {               
+            _register_event(ut, fd, UT_EVENT_RD, 0);  
+            if (ut->status & BIT(UT_ST_EXPIRED))             
+                return (-2);                                
+        }                                                   
+        if (ret >= 0)                                       
+            return (ret);                                   
+    }                                                       
 } 
 
 // 用于封装read_exact族和recv_exact族的接口   
-ssize_t uthread_recv_exact(int fd, void *buf, size_t length, int flags) {                                                         \
-    ssize_t ret = 0;                                        \
-    ssize_t recvd = 0;                                      \
-   struct uthread *ut = _sched_get()->cur_uthread;   \
-                                                            \
-    while (recvd != length) {                               \
-        if (ut->status & BIT(UT_ST_FDEOF))                   \
-            return (-1);                                    \
+ssize_t uthread_recv_exact(int fd, void *buf, size_t length, int flags) {                                                         
+    ssize_t ret = 0;                                        
+    ssize_t recvd = 0;                                      
+   struct uthread *ut = _sched_get()->cur_uthread;   
+                                                            
+    while (recvd != length) {                               
+        if (ut->status & BIT(UT_ST_FDEOF))                  
+            return (-1);                                    
 
-        ret = recv(fd, buf + recvd, length - recvd, flags FLAG);   \
-        if (ret == 0)                                       \
-            return (recvd);                                 \
-        if (ret > 0)                                        \
-            recvd += ret;                                   \
-        if (ret == -1 && errno != EAGAIN)                   \
-            return (-1);                                    \
-        if ((ret == -1 && errno == EAGAIN)) {               \
-            _register_event(ut, fd, UT_EVENT_RD, 0);  \
-            if (ut->status & BIT(UT_ST_EXPIRED))             \
-                return (-2);                                \
-        }                                                   \
-    }                                                       \
-    return (recvd);                                         \
-}                                                           \
-ssize_t uthread_read_exact(int fd, void *buf, size_t length) {                                                         \
-    ssize_t ret = 0;                                        \
-    ssize_t recvd = 0;                                      \
-   struct uthread *ut = _sched_get()->cur_uthread;   \
-                                                            \
-    while (recvd != length) {                               \
-        if (ut->status & BIT(UT_ST_FDEOF))                   \
-            return (-1);                                    \
+        ret = recv(fd, buf + recvd, length - recvd, flags FLAG);   
+        if (ret == 0)                                       
+            return (recvd);                                 
+        if (ret > 0)                                        
+            recvd += ret;                                   
+        if (ret == -1 && errno != EAGAIN)                   
+            return (-1);                                    
+        if ((ret == -1 && errno == EAGAIN)) {               
+            _register_event(ut, fd, UT_EVENT_RD, 0);  
+            if (ut->status & BIT(UT_ST_EXPIRED))             
+                return (-2);                                
+        }                                                   
+    }                                                       
+    return (recvd);                                         
+}                                                           
+ssize_t uthread_read_exact(int fd, void *buf, size_t length) {                                                         
+    ssize_t ret = 0;                                        
+    ssize_t recvd = 0;                                      
+   struct uthread *ut = _sched_get()->cur_uthread;   
+                                                            
+    while (recvd != length) {                               
+        if (ut->status & BIT(UT_ST_FDEOF))                  
+            return (-1);                                    
 
-        ret = read(fd, buf + recvd, length - recvd);        \
-        if (ret == 0)                                       \
-            return (recvd);                                 \
-        if (ret > 0)                                        \
-            recvd += ret;                                   \
-        if (ret == -1 && errno != EAGAIN)                   \
-            return (-1);                                    \
-        if ((ret == -1 && errno == EAGAIN)) {               \
-            _register_event(ut, fd, UT_EVENT_RD, 0);  \
-            if (ut->status & BIT(UT_ST_EXPIRED))             \
-                return (-2);                                \
-        }                                                   \
-    }                                                       \
-    return (recvd);                                         \
-}                                                           \
+        ret = read(fd, buf + recvd, length - recvd);        
+        if (ret == 0)                                       
+            return (recvd);                                 
+        if (ret > 0)                                        
+            recvd += ret;                                   
+        if (ret == -1 && errno != EAGAIN)                   
+            return (-1);                                    
+        if ((ret == -1 && errno == EAGAIN)) {               
+            _register_event(ut, fd, UT_EVENT_RD, 0);  
+            if (ut->status & BIT(UT_ST_EXPIRED))             
+                return (-2);                                
+        }                                                   
+    }                                                       
+    return (recvd);                                         
+}                                                           
 
 // 用于封装write和send族接口
 ssize_t uthread_write(int fd, const void *buf, size_t length)  {                                                        
@@ -262,36 +252,36 @@ ssize_t uthread_send(int fd, const void *buf, size_t length, int flags)  {
 }  
 
 // 用于封装sendmsg和sendto接口
-ssize_t uthread_sendmsg(int fd, const struct msghdr *message, int flags) {                                                         \
-    ssize_t ret = 0;                                        \
+ssize_t uthread_sendmsg(int fd, const struct msghdr *message, int flags) {                                                         
+    ssize_t ret = 0;                                        
     struct uthread *ut = _sched_get()->cur_uthread;
-    while (1) {                                             \
-        if (ut->status & BIT(UT_ST_FDEOF))                   \
-            return (-1);                                    \
-        ret = sendmsg(fd, message, flags FLAG);                                            \
-        if (ret >= 0)                                       \
-            return (ret);                                   \
-        if (ret == -1 && errno != EAGAIN)                   \
-            return (-1);                                    \
-        if (ret == -1 && errno == EAGAIN)                   \
-           _register_event(ut, fd, UT_EVENT_WR, 0);         \
-    }                                                       \
-}                                                           \
+    while (1) {                                             
+        if (ut->status & BIT(UT_ST_FDEOF))                  
+            return (-1);                                    
+        ret = sendmsg(fd, message, flags FLAG);                                            
+        if (ret >= 0)                                       
+            return (ret);                                   
+        if (ret == -1 && errno != EAGAIN)                   
+            return (-1);                                    
+        if (ret == -1 && errno == EAGAIN)                   
+           _register_event(ut, fd, UT_EVENT_WR, 0);         
+    }                                                       
+}                                                           
 ssize_t uthread_sendto(int fd, const void *buf, size_t length, int flags,
-        const struct sockaddr *dest_addr, socklen_t dest_len) {                                                         \
-    ssize_t ret = 0;                                        \
+        const struct sockaddr *dest_addr, socklen_t dest_len) {                                                         
+    ssize_t ret = 0;                                        
     struct uthread *ut = _sched_get()->cur_uthread;
-    while (1) {                                             \
-        if (ut->status & BIT(UT_ST_FDEOF))                   \
-            return (-1);                                    \
-        ret = sendto(fd, buf, length, flags FLAG, dest_addr, dest_len);                                            \
-        if (ret >= 0)                                       \
-            return (ret);                                   \
-        if (ret == -1 && errno != EAGAIN)                   \
-            return (-1);                                    \
-        if (ret == -1 && errno == EAGAIN)                   \
-           _register_event(ut, fd, UT_EVENT_WR, 0);         \
-    }                                                       \
+    while (1) {                                             
+        if (ut->status & BIT(UT_ST_FDEOF))                  
+            return (-1);                                    
+        ret = sendto(fd, buf, length, flags FLAG, dest_addr, dest_len);                                            
+        if (ret >= 0)                                       
+            return (ret);                                   
+        if (ret == -1 && errno != EAGAIN)                   
+            return (-1);                                    
+        if (ret == -1 && errno == EAGAIN)                   
+           _register_event(ut, fd, UT_EVENT_WR, 0);         
+    }                                                       
 }  
 
 

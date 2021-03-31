@@ -1,18 +1,18 @@
-#include "uthread.h"
 #include <stdio.h>
 #include <unistd.h>
+#include "uthread.h"
 
-void
+void *
 a(void *arg)
 {
     char c;
     // 输入ctrl + d退出循环
-    while (uthread_io_read(STDIN_FILENO, &c, 1)) {
-        uthread_io_write(STDOUT_FILENO, &c, 1);
+    while (pthread_disk_read(STDIN_FILENO, &c, 1)) {
+        pthread_disk_write(STDOUT_FILENO, &c, 1);
     }
 }
 
-void
+void *
 b(void *x)
 {
     for (int i = 0; i < 10; ++i) {
@@ -24,11 +24,11 @@ b(void *x)
 int
 main(int argc, char **argv)
 {
-    struct uthread *ut = NULL;
+    enable_hook();
 
-    uthread_create(&ut, a, NULL);
-    uthread_create(&ut, b, NULL);
-    _uthread_yield();
+    pthread_t p, p2;
+    pthread_create(&p, NULL, a, NULL);
+    pthread_create(&p2, NULL, b, NULL);
 
-    uthread_main_end();
+    main_end();
 }

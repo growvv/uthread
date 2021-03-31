@@ -5,17 +5,16 @@
 #include <time.h>           // size_t
 #include <pthread.h>
 #include <sys/queue.h>      // for queue.h
-#include <sys/time.h>   // gettimeofday
+#include <sys/time.h>       // gettimeofday
 #include <sys/epoll.h>
 
 #include "tree.h"
-// #include "timer.h"
 
 #define BIT(x) (1 << (x))
 #define CLEARBIT(x) ~(1 << (x))
 
 #define STACK_SIZE          (128*1024)   // 每个协程设置的栈空间大小
-                                        // 【这个栈要是小了，比如2*1024，好像会出问题，先设得大些避开这个问题，后续再优化】
+                                         // 【这个栈要是小了，比如2*1024，好像会出问题，先设得大些避开这个问题，后续再优化】
 #define MAX_COUNT_SCHED     1000         // 最大允许创建的调度器个数（即线程的个数）
 #define MAX_PROCS           4            // 最大允许并发的任务个数 ，也即初始化系统时创建的p和sched的个数
 #define MAX_COUNT_UTHREAD   10000000     // 最大允许创建的ut个数，一千万
@@ -25,7 +24,8 @@ enum uthread_event {
     UT_EVENT_WR,
 };
 
-struct context {                        // 直接copy来的
+// 上下文
+struct context {                        
     void     *esp;
     void     *ebp;
     void     *eip;
@@ -48,9 +48,9 @@ enum uthread_st {
     UT_ST_SLEEPING,                     // “阻塞”状态
     UT_ST_DETACHED,                     // 处于分离状态的协程可以完全销毁，释放所有资源
     UT_ST_EXPIRED,                      // 被“阻塞”的协程因为超时而醒来
-    UT_ST_FDEOF,                       // 被“文件结束”阻塞后醒来的
-    UT_ST_WAIT_RD,
-    UT_ST_WAIT_WR,
+    UT_ST_FDEOF,                        // 被“文件结束”阻塞后醒来的
+    UT_ST_WAIT_RD,                      // 等待读就绪
+    UT_ST_WAIT_WR,                      // 等待写就绪
 };
 
 /* 【sched和p的状态后续再完善，暂时设置得比较随意】 */
@@ -115,7 +115,7 @@ TAILQ_HEAD(p_que, p);         // 声明结构体，p队列，将被定义在glob
 /* 用于保存众多的全局变量，它会被注册在每个sched中，从而实现所有sched都可访问，
 *  但在修改时要通过互斥量保证不冲突！！*/
 struct global_data {
-    pthread_mutex_t         mutex;           // 全局数据的锁
+    pthread_mutex_t         mutex;                  // 全局数据的锁
 
     /* 全局的sched数据 */
     struct sched            *all_sched;             // sched结构体数组
@@ -156,11 +156,8 @@ struct sched {
     TAILQ_ENTRY(sched)      with_stack_next;        // 用于记录所有分配了栈的sched，以便最后统一释放sched的栈资源
 };
 
-int
-_uthread_sleep_cmp(struct uthread *u1, struct uthread *u2);
-
-int
-_uthread_wait_cmp(struct uthread *ut1, struct uthread *ut2);
+int _uthread_sleep_cmp(struct uthread *u1, struct uthread *u2);
+int _uthread_wait_cmp(struct uthread *ut1, struct uthread *ut2);
 
 /* 在uthread.c中定义的全局变量，每个线程会拥有一份，用于绑定线程自己的sched（参见 线程特有数据 相关）*/
 extern pthread_key_t uthread_sched_key;   
@@ -178,15 +175,10 @@ void * _sched_create_another(void *arg);
 
 void _uthread_yield();
 int _uthread_resume(struct uthread *ut);
-
 void _uthread_sched_sleep(struct uthread *ut, uint64_t mescs);
-
 void _uthread_desched_sleep(struct uthread *ut);
-
 void _uthread_sched_sleep(struct uthread *ut, uint64_t mescs); 
-
 void _uthread_desched_sleep(struct uthread *ut);
-
 void _register_event(struct uthread *ut, int sockfd, enum uthread_event e, uint64_t timeout);
 
 /********************/
