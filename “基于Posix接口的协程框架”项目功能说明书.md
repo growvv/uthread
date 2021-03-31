@@ -51,7 +51,7 @@
 每一个协程实体在它生命周期中的不同阶段会具有不同的状态，协程进行状态转移的主要流程如下图所示：  
 
 <div align = center>
-    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(1).png" style="zoom:70%;" />
+    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(1).png" style="zoom:10%;" />
 </div>
 
 
