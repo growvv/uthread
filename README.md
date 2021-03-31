@@ -16,7 +16,7 @@
 7. 基于时间轮定时器实现10ms级的抢占
 
 <div align = center>
-    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/20210331212521.png" style="zoom:50%;" />
+    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/20210331212521.png" style="width:80%; height:80%" />
 </div>
 
 #### 软件架构
@@ -24,7 +24,7 @@
 我们主要参考Golang的GMP协程调度模型进行项目代码的架构设计，架构示意图如下：
 
 <div align = center>
-    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image.png" style="zoom:50%;" />
+    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image.png" style="width:80%; height:80%" />
 </div>
 
 架构涉及三个核心组件，图中KSE为内核调度实体，即内核线程。三个组件简要说明如下：
