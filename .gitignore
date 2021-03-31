@@ -5,7 +5,7 @@
 #增加指定扩展名文件和MAKEFILE文件
 !*.c
 !*.h
-!makefile
+!Makefile
 #当前目录下需要提交的文件                                                                                                                                                  
 !README.md
 !.gitignore
