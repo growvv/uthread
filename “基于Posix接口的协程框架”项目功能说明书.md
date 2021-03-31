@@ -165,7 +165,10 @@ Linux内核（2.6版本）加入了内核抢占机制。内核抢占指用户程
 每个uthread协程注册插入到时间轮的逻辑设计如下：我们在插入时需要两个参数，第一个参数len表示该uthread需要执行的时间，第二个参数ut表明所绑定的协程结构体指针。我们只需要知道len和时间轮当前的槽位即可确定该节点在时间轮上需要挂载的位置pos。找到槽位后，在插入链表时我们采用头插法插入到链表头部即可。这样能使插入的时间复杂度控制在O(1)。  
 
 在设计完时间轮的相关结构后，我们设计了相应的控制逻辑。整体的逻辑流程图如下：
-![avatar](https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(10).png)
+<div align = center>
+    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(10).png" width=50% height=60% style="zoom:85%;" />
+</div>
+
 
 对于该时间轮，我们需要在系统初始化时就进行创建操作。具体创建操作我们封装在一个函数create_timewheel()中。我们使用了linux内核自带的setitimer用来实现延时和定时的功能。其中的new_value参数用来对计时器进行设置，it_interval为计时间隔，it_value为延时时长。setitimer工作机制是，先对it_value倒计时，当it_value为零时触发信号，然后重置为it_interval，继续对it_value倒计时，一直这样循环下去。在设置完后系统内核会定时给进程发送SIGALRM信号来通知进程执行相关操作。在本项目中，每次SIGALRM信号到达时执行我们给进程绑定的tick函数。设置定时器时间阈值为10ms，如果计算密集型协程执行时间超过该阈值，监控线程则给该协程发送信号使其yield让出。  
 
@@ -461,7 +464,10 @@ int main(int argc, char **argv) {
 ```
 
 效果展示（由于打印输出很长，只截取部分输出）：
-![avatar](https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(11).png)
+<div align = center>
+    <img src="https://cdn.jsdelivr.net/gh/growvv/image-bed//mac-m1/image%20(11).png" width=50% height=60% style="zoom:85%;" />
+</div>
+
 
 2. test_join_exit.c  
 
