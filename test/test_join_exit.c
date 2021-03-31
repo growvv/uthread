@@ -9,7 +9,7 @@ void *
 a () {
     // printf("a-ut id: %ld .\n", pthread_self());
     printf("a is running.\n");
-    pthread_exit("Hey main-ut, is everything ok?\n");
+    pthread_exit("哥, 听说我们能进决赛?\n");
 }
 
 void *
@@ -37,8 +37,9 @@ int main() {
     printf("main waken up.\n");
     printf("msg returned by a: %s", (char *)retval);
 
+    void *retval2 = NULL;
     printf("main about to join b.\n");
-    pthread_join(p2, NULL);
+    pthread_join(p2, retval2);
     printf("main waken up.\n");
 
     printf("main is existing.\n\n");
