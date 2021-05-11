@@ -44,3 +44,39 @@
 1. 编辑库配置文件/etc/ld.so.conf.d/usr-libs.conf，写入库文件所在目录/usr/local/lib  
 2. 执行命令行ldconfig更新/etc/ld.so.cache文件
 3. 在代码中包含uthread.h头文件
+
+```C
+#include <stdio.h>
+#include "uthread.h"
+
+// 测试协程基本的让出和恢复执行
+void *
+a (void *x) {
+    for (int i = 0; i < 100; i = i + 2) {
+        printf("thread a: %d\n", i);
+    }
+}
+
+void * 
+b (void *x) {
+    for (int i = 1; i < 100; i = i + 2) {
+        printf("thread b: %d\n", i);
+    }
+}
+
+int
+main (int argc, char **argv) {
+
+    enable_hook();
+    
+    pthread_t p1,p2;
+    pthread_create(&p1,NULL,a,NULL);
+    pthread_create(&p2,NULL,b,NULL);
+
+    printf("main is running...\n");
+    printf("main is exiting...\n");
+
+    main_end();
+}
+
+```
