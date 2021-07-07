@@ -80,3 +80,8 @@ main (int argc, char **argv) {
 }
 
 ```
+
+# 获奖情况
+
+
+2020 openEuler 高校开发者大赛 前 50 强: https://mp.weixin.qq.com/s/MgVNeS0hlNCqHDiWdyrygA
