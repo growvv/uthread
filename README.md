@@ -42,8 +42,18 @@
 #### 使用说明
 
 1. 编辑库配置文件/etc/ld.so.conf.d/usr-libs.conf，写入库文件所在目录/usr/local/lib  
+
+`echo "/usr/local/laa" | sudo tee -a /etc/ld.so.conf.d/usr-libs.conf`
+
 2. 执行命令行ldconfig更新/etc/ld.so.cache文件
+
+`ldconfig`
+
 3. 在代码中包含uthread.h头文件
+
+`#include "uthread.h"`
+
+4. 实例
 
 ```C
 #include <stdio.h>
