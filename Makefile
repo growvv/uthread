@@ -11,3 +11,8 @@ test_file:
 	gcc $(gccflags) -o ./test/test_socket_io ./test/test_socket_io.c -L./ -lmyhook
 	gcc $(gccflags) -o ./test/test_disk_io ./test/test_disk_io.c -L./ -lmyhook
 	gcc $(gccflags) -o ./test/test_timer ./test/test_timer.c -L./ -lmyhook
+	gcc $(gccflags) -o ./test/test_server ./test/test_server.c -L./ -lmyhook
+
+clean:
+	rm -f libmyhook.so ./test/test_uthread ./test/test_join_exit ./test/test_socket_io ./test/test_disk_io \
+		./test/test_timer ./test/test_server
