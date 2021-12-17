@@ -40,10 +40,13 @@
 </div>
 
 #### 使用说明
+0. 下载源代码并编译
+
+`cd uthread && make`
 
 1. 编辑库配置文件/etc/ld.so.conf.d/usr-libs.conf，写入库文件所在目录/usr/local/lib  
 
-`echo "/usr/local/laa" | sudo tee -a /etc/ld.so.conf.d/usr-libs.conf`
+`echo "/usr/local/lib" | sudo tee -a /etc/ld.so.conf.d/usr-libs.conf`
 
 2. 执行命令行ldconfig更新/etc/ld.so.cache文件
 
